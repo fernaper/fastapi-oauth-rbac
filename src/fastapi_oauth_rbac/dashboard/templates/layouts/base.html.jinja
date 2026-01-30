@@ -469,6 +469,14 @@
             const modal = document.getElementById(id);
             if (modal) {
                 modal.classList.toggle('show');
+
+                // Disable background scroll when any modal is open
+                const anyModalShown = document.querySelectorAll('.modal-backdrop.show').length > 0;
+                if (anyModalShown) {
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    document.body.style.overflow = '';
+                }
             }
         }
 
