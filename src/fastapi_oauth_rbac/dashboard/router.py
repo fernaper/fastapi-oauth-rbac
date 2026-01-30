@@ -6,10 +6,12 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, Request, Form, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_, distinct
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, aliased
 
+from ..core.security import hash_password
+from ..core.audit import AuditManager
 from ..database.models import User, Role, Permission
 from ..rbac.dependencies import (
     get_db,
@@ -17,7 +19,6 @@ from ..rbac.dependencies import (
     requires_permission,
 )
 from ..rbac.manager import RBACManager
-from ..core.security import hash_password
 
 dashboard_router = APIRouter(tags=['Dashboard'])
 
@@ -161,6 +162,21 @@ async def verify_user_action(
     user.is_verified = not user.is_verified
     await db.commit()
 
+    # Audit Log
+    audit = AuditManager(db)
+    current_user = await get_current_user_optional(
+        request,
+        request.cookies.get('access_token'),
+        db,
+    )
+    await audit.log(
+        actor_email=current_user.email if current_user else 'system',
+        action='USER_VERIFY_TOGGLE',
+        target=user.email,
+        details=f'Verified: {user.is_verified}',
+        ip_address=request.client.host if request.client else None,
+    )
+
     query = f'?page={page}&pageSize={pageSize}'
     if filter:
         query += f'&filter={filter}'
@@ -279,8 +295,23 @@ async def update_user_roles(
         user.roles = list(new_roles)
     else:
         user.roles = []
-
     await db.commit()
+
+    # Audit Log
+    audit = AuditManager(db)
+    current_user = await get_current_user_optional(
+        request,
+        request.cookies.get('access_token'),
+        db,
+    )
+    await audit.log(
+        actor_email=current_user.email if current_user else 'system',
+        action='USER_ROLES_UPDATE',
+        target=user.email,
+        details=f'New role IDs: {role_ids}',
+        ip_address=request.client.host if request.client else None,
+    )
+
     return RedirectResponse(
         url=request.url_for('dashboard_index'),
         status_code=status.HTTP_303_SEE_OTHER,
@@ -386,7 +417,8 @@ async def delete_role_action(
 
     if role.is_default:
         raise HTTPException(
-            status_code=400, detail='Cannot delete default roles'
+            status_code=400,
+            detail='Cannot delete default roles',
         )
 
     await db.delete(role)

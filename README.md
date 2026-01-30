@@ -16,6 +16,16 @@ The documentation has been significantly improved and split into easy-to-digest 
 
 ---
 
+## 🛠️ Examples
+
+Check out the `examples/` directory for practical implementations:
+- `basic_app.py`: Standard implementation.
+- `multi_tenancy.py`: [NEW] Scoping users and roles to tenants.
+- `advanced_extension.py`: [NEW] Custom User models, Hooks, and Email services.
+- `testing_example.py`: [NEW] How to test your protected routes.
+
+---
+
 ## Quick Start (Minimal)
 
 ```python

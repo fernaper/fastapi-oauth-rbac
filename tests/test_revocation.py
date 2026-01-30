@@ -1,7 +1,9 @@
 import pytest
+
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from fastapi import HTTPException
+
 from fastapi_oauth_rbac.database.models import Base, User
 from fastapi_oauth_rbac.core.security import create_access_token
 from fastapi_oauth_rbac.rbac.dependencies import get_current_user

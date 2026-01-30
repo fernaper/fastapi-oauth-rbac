@@ -8,23 +8,25 @@ from fastapi import (
     Response,
 )
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from pydantic import BaseModel, EmailStr
-from typing import Dict, Any, Optional, List
+from typing import Optional
 
-from ..database.models import User, Role
-from ..rbac.dependencies import get_db, get_current_user
+from ..auth.oauth import GoogleOAuth
+from ..core.config import settings
 from ..core.security import (
     verify_password,
     hash_password,
     create_access_token,
+    create_refresh_token,
     decode_token,
 )
-from ..auth.oauth import GoogleOAuth
+from ..database.models import User, Role
+from ..rbac.dependencies import get_db, get_current_user, get_current_user_optional
 from ..rbac.manager import RBACManager
-from ..core.config import settings
+from ..core.audit import AuditManager
 
 auth_router = APIRouter(tags=['Authentication'])
 
@@ -32,6 +34,7 @@ auth_router = APIRouter(tags=['Authentication'])
 class SignupRequest(BaseModel):
     email: EmailStr
     password: str
+    tenant_id: Optional[str] = None
 
 
 class ResetPasswordRequest(BaseModel):
@@ -62,10 +65,32 @@ async def signup(
         email=data.email,
         hashed_password=hash_password(data.password),
         roles=[user_role] if user_role else [],
+        tenant_id=data.tenant_id,
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
+
+    # Audit Log (Self signup or system action)
+    audit = AuditManager(db)
+    await audit.log(
+        actor_email=user.email,
+        action='USER_SIGNUP',
+        target=user.email,
+        details=f'Tenant: {user.tenant_id}',
+    )
+
+    # 1. Trigger Hook
+    if rbac_instance:
+        await rbac_instance.hooks.trigger('post_signup', user)
+
+    # 2. Handle Verification Email
+    if settings.VERIFY_EMAIL_ENABLED and rbac_instance:
+        token = create_access_token(
+            data={'sub': user.email, 'type': 'verify_email'}
+        )
+        await rbac_instance.email_exporter.send_verification_email(user, token)
+
     return {'message': 'User created successfully', 'email': user.email}
 
 
@@ -123,6 +148,7 @@ async def login_for_access_token(
     access_token = create_access_token(
         data={'sub': user.email, 'scopes': list(permissions)}
     )
+    refresh_token = create_refresh_token(data={'sub': user.email})
 
     # Set cookie for dashboard access
     response.set_cookie(
@@ -132,20 +158,121 @@ async def login_for_access_token(
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path='/',
     )
+    response.set_cookie(
+        key='refresh_token',
+        value=refresh_token,
+        httponly=True,  # Refresh token should be more secure
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path='/',
+    )
 
-    return {'access_token': access_token, 'token_type': 'bearer'}
+    # Trigger Login Hook
+    if rbac_instance:
+        await rbac_instance.hooks.trigger('post_login', user)
+
+    return {
+        'access_token': access_token,
+        'refresh_token': refresh_token,
+        'token_type': 'bearer',
+    }
 
 
 @auth_router.post('/logout')
 async def logout(
+    response: Response,
     global_logout: bool = False,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: AsyncSession = Depends(get_db),
 ):
-    if global_logout:
+    """
+    Clears the access token cookie and optionally performs a global logout
+    (invalidating all sessions for this user).
+    """
+    response.delete_cookie(key='access_token', path='/')
+
+    if global_logout and current_user:
         current_user.is_revoked = True
         await db.commit()
+
     return {'message': 'Logged out successfully'}
+
+
+@auth_router.post('/refresh')
+async def refresh_token(
+    request: Request,
+    response: Response,
+    refresh_token: Optional[str] = Body(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Renew the access token using a refresh token.
+    The refresh token can be provided in the body or via cookie.
+    """
+    token = refresh_token or request.cookies.get('refresh_token')
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='Refresh token missing',
+        )
+
+    try:
+        payload = decode_token(token)
+        if payload.get('type') != 'refresh':
+            raise ValueError('Invalid token type')
+        email = payload.get('sub')
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='Invalid refresh token',
+        )
+
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = rbac_instance.user_model if rbac_instance else User
+
+    stmt = (
+        select(user_model)
+        .where(user_model.email == email)
+        .options(selectinload(user_model.roles))
+    )
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user or (settings.AUTH_REVOCATION_ENABLED and user.is_revoked):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail='User not found or session revoked',
+        )
+
+    # Fetch permissions for scopes
+    rbac = RBACManager(db)
+    permissions = await rbac.get_user_permissions(user)
+
+    new_access_token = create_access_token(
+        data={'sub': user.email, 'scopes': list(permissions)}
+    )
+    new_refresh_token = create_refresh_token(data={'sub': user.email})
+
+    # Update cookies
+    response.set_cookie(
+        key='access_token',
+        value=new_access_token,
+        httponly=False,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path='/',
+    )
+    response.set_cookie(
+        key='refresh_token',
+        value=new_refresh_token,
+        httponly=True,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        path='/',
+    )
+
+    return {
+        'access_token': new_access_token,
+        'refresh_token': new_refresh_token,
+        'token_type': 'bearer',
+    }
 
 
 @auth_router.get('/me')
@@ -183,6 +310,11 @@ async def verify_email(
 
         user.is_verified = True
         await db.commit()
+
+        # Trigger Hook
+        if rbac_instance:
+            await rbac_instance.hooks.trigger('post_email_verify', user)
+
         return {'message': 'Email verified successfully'}
     except Exception:
         raise HTTPException(status_code=400, detail='Invalid or expired token')
@@ -203,7 +335,18 @@ async def forgot_password(
         }
 
     token = create_access_token(data={'sub': email, 'type': 'reset_password'})
-    return {'message': 'Reset token generated', 'debug_token': token}
+
+    if rbac_instance:
+        # Fetch user again to be sure (already done by exist check above but we need to pass it to exporter)
+        stmt = select(user_model).where(user_model.email == email)
+        res = await db.execute(stmt)
+        u = res.scalar_one()
+        await rbac_instance.email_exporter.send_password_reset_email(u, token)
+
+    return {
+        'message': 'If the email is registered, you will receive a reset link',
+        'debug_token': token,
+    }
 
 
 @auth_router.post('/reset-password')
@@ -230,6 +373,11 @@ async def reset_password(
 
         user.hashed_password = hash_password(data.new_password)
         await db.commit()
+
+        # Trigger Hook
+        if rbac_instance:
+            await rbac_instance.hooks.trigger('post_password_reset', user)
+
         return {'message': 'Password reset successfully'}
     except Exception:
         raise HTTPException(status_code=400, detail='Invalid or expired token')
@@ -240,7 +388,10 @@ async def google_callback(
     request: Request, code: str, db: AsyncSession = Depends(get_db)
 ):
     try:
-        user_data = await GoogleOAuth.get_user_data(code, 'YOUR_REDIRECT_URI')
+        redirect_uri = settings.GOOGLE_OAUTH_REDIRECT_URI or str(
+            request.url_for('google_callback')
+        )
+        user_data = await GoogleOAuth.get_user_data(code, redirect_uri)
         email = user_data.get('email')
 
         rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
@@ -307,9 +458,3 @@ async def google_callback(
         return response
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-@auth_router.post('/logout')
-async def logout(response: Response):
-    response.delete_cookie(key='access_token', path='/')
-    return {'message': 'Logged out'}

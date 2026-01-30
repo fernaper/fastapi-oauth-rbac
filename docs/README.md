@@ -10,8 +10,10 @@ Welcome to the comprehensive documentation for **FastAPIOAuthRBAC**. This librar
 | ⚙️ **[Configuration](configuration.md)** | Environment variables, Database, and OAuth providers. |
 | 🛡️ **[NIST RBAC Model](rbac.md)** | Deep dive into roles, hierarchies, and permissions. |
 | 🖥️ **[Admin Dashboard](dashboard.md)** | How to manage users and roles visually. |
-| 📖 **[API Reference](api-reference.md)** | Detailed documentation of classes, decorators, and methods. |
+| 📖 **[API Reference](api-reference.md)** | Detailed documentation of classes, hooks, and methods. |
 | 🏗️ **[Architecture](architecture.md)** | Internal design, database schema, and security flow. |
+| 🧪 **[Testing](testing.md)** | How to test your application with RBAC helpers. |
+| 🏢 **[Multi-tenancy](multi-tenancy.md)** | Scoping users and roles to tenants. |
 
 ---
 

@@ -1,16 +1,20 @@
-from fastapi import FastAPI, APIRouter, Depends
 import secrets
 import string
+
 from typing import Type, Optional, AsyncGenerator, List, Set
 from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from .database.models import Base, User, Role, Permission
-from .database.session import AsyncSessionLocal, engine, get_db
 from .core.config import settings
 from .core.security import hash_password
+from .core.hooks import hooks
+from .core.email import BaseEmailExporter, ConsoleEmailExporter
+from .database.models import Base, User, Role, Permission
+from .database.session import AsyncSessionLocal, engine, get_db
 
 
 class FastAPIOAuthRBAC:
@@ -21,6 +25,7 @@ class FastAPIOAuthRBAC:
         require_verified: bool = settings.REQUIRE_VERIFIED_LOGIN,
         enable_dashboard: bool = settings.DASHBOARD_ENABLED,
         dashboard_path: str = settings.DASHBOARD_PATH,
+        email_exporter: Optional[BaseEmailExporter] = None,
     ):
         self.app = app
         self.user_model = user_model or User
@@ -28,6 +33,8 @@ class FastAPIOAuthRBAC:
         self.require_verified = require_verified
         self.enable_dashboard = enable_dashboard
         self.dashboard_path = dashboard_path
+        self.email_exporter = email_exporter or ConsoleEmailExporter()
+        self.hooks = hooks
 
         # Default dependency override
         self.app.dependency_overrides[get_db] = get_db

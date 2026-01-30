@@ -3,13 +3,13 @@ import uuid
 from typing import List, Optional
 
 from sqlalchemy import (
+    Boolean,
     Column,
+    DateTime,
+    ForeignKey,
     Integer,
     String,
-    Boolean,
-    ForeignKey,
     Table,
-    DateTime,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from datetime import datetime, timezone
@@ -58,6 +58,7 @@ class Role(Base):
     name: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     description: Mapped[Optional[str]] = mapped_column(String(255))
     is_default: Mapped[bool] = mapped_column(default=False)
+    tenant_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
 
     # Hierarchy
     parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey('roles.id'))
@@ -88,9 +89,24 @@ class UserBaseMixin:
 
     # Revocation support
     is_revoked: Mapped[bool] = mapped_column(default=False)
+    tenant_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
 
 
 class User(Base, UserBaseMixin):
     __tablename__ = 'users'
 
     roles: Mapped[List[Role]] = relationship(secondary=user_roles)
+
+
+class AuditLog(Base):
+    __tablename__ = 'audit_logs'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
+    actor_email: Mapped[str] = mapped_column(String(255))
+    action: Mapped[str] = mapped_column(String(100))
+    target: Mapped[Optional[str]] = mapped_column(String(255))
+    details: Mapped[Optional[str]] = mapped_column(String(1000))
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45))

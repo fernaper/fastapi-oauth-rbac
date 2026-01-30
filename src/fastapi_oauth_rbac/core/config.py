@@ -8,10 +8,12 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = 'secret'
     JWT_ALGORITHM: str = 'HS256'
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # OAuth Settings
     GOOGLE_OAUTH_CLIENT_ID: Optional[str] = None
     GOOGLE_OAUTH_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_OAUTH_REDIRECT_URI: Optional[str] = None
 
     # RBAC Settings
     AUTH_REVOCATION_ENABLED: bool = False

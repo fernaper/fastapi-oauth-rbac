@@ -1,11 +1,13 @@
 import pytest
+
 from fastapi import FastAPI, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy import select
+
 from fastapi_oauth_rbac import FastAPIOAuthRBAC
 from fastapi_oauth_rbac.rbac.dependencies import requires_permission
 from fastapi_oauth_rbac.database.models import Permission, Base
-from sqlalchemy import select
 
 
 @pytest.mark.asyncio
@@ -18,9 +20,7 @@ async def test_dynamic_permission_discovery():
         return {'ok': True}
 
     # Initialize library
-    auth = FastAPIOAuthRBAC(
-        app, auto_setup=False
-    )  # We'll call setup_defaults manually
+    auth = FastAPIOAuthRBAC(app)  # We'll call setup_defaults manually
 
     # The permission "custom:action" should be discovered
     discovered = auth._discover_route_permissions()
@@ -46,7 +46,7 @@ async def test_dynamic_permission_discovery():
 @pytest.mark.asyncio
 async def test_role_registration():
     app = FastAPI()
-    auth = FastAPIOAuthRBAC(app, auto_setup=False)
+    auth = FastAPIOAuthRBAC(app)
 
     # Register a custom role
     auth.add_role(

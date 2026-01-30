@@ -1,15 +1,15 @@
 import pytest
-import uuid
-from sqlalchemy.ext.asyncio import (
-    create_async_engine,
-    async_sessionmaker,
-    AsyncSession,
-)
-from sqlalchemy import select, func
-from sqlalchemy.orm import selectinload
+
 from fastapi_oauth_rbac.database.models import Base, User, Role
 from fastapi_oauth_rbac.dashboard.router import dashboard_index
 from fastapi import Request
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import (
+    async_sessionmaker,
+    create_async_engine,
+    AsyncSession,
+)
+from sqlalchemy.orm import selectinload
 from unittest.mock import AsyncMock, patch
 
 

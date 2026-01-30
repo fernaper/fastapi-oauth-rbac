@@ -1,4 +1,3 @@
-import pytest
 from fastapi_oauth_rbac.core.security import (
     hash_password,
     verify_password,

@@ -26,6 +26,52 @@ FastAPIOAuthRBAC(
 - `include_auth_router()`: Mounts the authentication endpoints (`/login`, `/signup`, `/logout`, `/me`).
 - `include_dashboard()`: Mounts the admin dashboard.
 
+## 🪝 Event Hooks
+The library provides an event system to react to core identity events.
+
+```python
+auth = FastAPIOAuthRBAC(app)
+
+@auth.hooks.register("post_signup")
+async def welcome_user(user, **kwargs):
+    print(f"Welcome {user.email}!")
+```
+
+Available events: `post_signup`, `post_login`, `post_password_reset`, `post_email_verify`.
+
+## 📧 Email Exporters
+To send real emails, subclass `BaseEmailExporter` and pass it during initialization.
+
+```python
+from fastapi_oauth_rbac import BaseEmailExporter
+
+class MyEmailService(BaseEmailExporter):
+    async def send_verification_email(self, user, token):
+        # Your custom logic (SendGrid, etc)
+        ...
+
+auth = FastAPIOAuthRBAC(app, email_exporter=MyEmailService())
+```
+
+## 🔄 Refresh Tokens
+The library supports JWT refresh tokens for secure session renewal.
+
+- **/refresh**: Endpoint to exchange a valid refresh token for a new access token and a new rotated refresh token.
+- **Cookies**: Refresh tokens are stored in `httponly` cookies for enhanced security.
+- **Configuration**: `REFRESH_TOKEN_EXPIRE_DAYS` (default: 7).
+
+## 📜 Audit Logging
+Administrative actions performed through the dashboard are automatically logged.
+
+- **Actions Logged**: `USER_VERIFY_TOGGLE`, `USER_ROLES_UPDATE`.
+- **Database Table**: `audit_logs` (stores actor, action, target, details, and IP).
+
+## 🏢 Multi-tenancy
+Users and roles can be scoped to a specific tenant.
+
+- **tenant_id**: Both `User` and `Role` models include an optional `tenant_id` field.
+- **Scoping**: When resolving permissions, the `RBACManager` only considers global roles (null `tenant_id`) or roles matching the user's `tenant_id`.
+
 ## 🧱 Dependencies
 
 These functions are designed to be used with FastAPI's `Depends()`.
