@@ -1,6 +1,6 @@
 {% extends "layouts/base.html.jinja" %}
 
-{% block title %}Role Management - RBAC Admin{% endblock %}
+{% block title %}Role Management - {{ request.app.title }}{% endblock %}
 
 {% block content %}
 <style>
@@ -258,7 +258,7 @@
 
 <div class="dashboard-header animate-fade-in">
     <div class="header-text">
-        <h1>Role Management</h1>
+        <h1>{{ request.app.title }}</h1>
         <p class="text-muted">Define access levels and permission groups for your organization.</p>
     </div>
     <button class="btn btn-primary" onclick="toggleModal('createRoleModal')">

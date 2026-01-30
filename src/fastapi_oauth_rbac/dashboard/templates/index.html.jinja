@@ -1,6 +1,6 @@
 {% extends "layouts/base.html.jinja" %}
 
-{% block title %}User Management - RBAC Admin{% endblock %}
+{% block title %}User Management - {{ request.app.title }}{% endblock %}
 
 {% block content %}
 <style>
@@ -291,7 +291,7 @@
 
 <div class="dashboard-header animate-fade-in">
     <div class="header-text">
-        <h1>User Management</h1>
+        <h1>{{ request.app.title }}</h1>
         <p class="text-muted">Control system access and user permissions at a granular level.</p>
     </div>
     <button class="btn btn-primary" onclick="toggleModal('createUserModal')">

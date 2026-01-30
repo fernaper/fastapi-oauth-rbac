@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Dashboard - FastAPIOAuthRBAC{% endblock %}</title>
+    <title>{% block title %}Dashboard - {{ request.app.title }}{% endblock %}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -436,7 +436,7 @@
             <div class="flex items-center gap-6">
                 <a class="brand" href="{{ url_for('dashboard_index') }}">
                     <i class="fas fa-shield-halved text-accent"></i>
-                    <span>RBAC Admin</span>
+                    <span>{{ request.app.title }}</span>
                 </a>
                 <nav class="flex gap-4 ml-8">
                     <a href="{{ url_for('dashboard_index') }}"
