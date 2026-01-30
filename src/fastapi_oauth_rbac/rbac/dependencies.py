@@ -1,9 +1,11 @@
-from typing import List, Optional, Callable, Union
+from typing import List, Optional, Union
+
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+
 from ..core.security import decode_token
 from ..core.config import settings
 from ..database.models import User, Role, Permission
@@ -49,12 +51,16 @@ async def get_current_user_optional(
     except Exception:
         return None
 
+    # Get the correct user model from app state
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = rbac_instance.user_model if rbac_instance else User
+
     # Async query with eager loading of roles and permissions
     stmt = (
-        select(User)
-        .where(User.email == email)
+        select(user_model)
+        .where(user_model.email == email)
         .options(
-            selectinload(User.roles)
+            selectinload(user_model.roles)
             .selectinload(Role.permissions)
             .selectinload(Permission.children)
         )
@@ -86,9 +92,9 @@ class PermissionChecker:
         user_perms = await rbac.get_user_permissions(user)
 
         if not self.requirement.evaluate(user_perms):
-            detail = f"Permission denied. Required: {self.requirement}"
+            detail = f'Permission denied. Required: {self.requirement}'
             if isinstance(self.requirement, PermissionLogic):
-                detail = f"Permission denied: {self.requirement.name}"
+                detail = f'Permission denied: {self.requirement.name}'
 
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

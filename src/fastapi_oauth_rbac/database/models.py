@@ -1,5 +1,7 @@
-from typing import List, Optional
 import uuid
+
+from typing import List, Optional
+
 from sqlalchemy import (
     Column,
     Integer,
@@ -71,9 +73,7 @@ class Role(Base):
 class UserBaseMixin:
     """Base mixin for User model to allow extensibility."""
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[Optional[str]] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(default=True)

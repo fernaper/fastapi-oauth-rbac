@@ -41,13 +41,21 @@ async def admin_only():
     return {'message': 'Welcome, Master of Roles!'}
 
 
-@app.get('/multi-perm', dependencies=[requires_permission(['users:view', 'dashboard:view'])])
+@app.get(
+    '/multi-perm',
+    dependencies=[requires_permission(['users:view', 'dashboard:view'])],
+)
 async def multi_perm():
     """Requires BOTH users:view AND dashboard:view (List input means AND)"""
     return {'message': 'You have both required permissions!'}
 
 
-@app.get('/complex-logic', dependencies=[requires_permission(Or('users:write', Not('is_guest:access')))])
+@app.get(
+    '/complex-logic',
+    dependencies=[
+        requires_permission(Or('users:write', Not('is_guest:access')))
+    ],
+)
 async def complex_logic():
     """Requires (users:write OR NOT is_guest:access)"""
     return {'message': 'You passed the complex logic check!'}

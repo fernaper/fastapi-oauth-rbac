@@ -39,8 +39,10 @@ def startup():
     # Create default roles/permissions for demo
     db = SessionLocal()
     if not db.query(Role).all():
-        view_perm = Permission(name='view_items', description='Can view items')
-        edit_perm = Permission(name='edit_items', description='Can edit items')
+        view_perm = Permission(name='items:read', description='Can view items')
+        edit_perm = Permission(
+            name='items:update', description='Can edit items'
+        )
         db.add_all([view_perm, edit_perm])
 
         user_role = Role(
@@ -49,7 +51,7 @@ def startup():
         admin_role = Role(
             name='admin',
             description='Admin user',
-            permissions=[view_perm, edit_perm],
+            permissions=['*'],
         )
         db.add_all([user_role, admin_role])
 
@@ -78,9 +80,9 @@ def read_users_me(current_user: User = Depends(get_current_user)):
     }
 
 
-@app.get('/protected', dependencies=[requires_permission('edit_items')])
+@app.get('/protected', dependencies=[requires_permission('items:edit')])
 def protected_route():
-    return {'message': "You have 'edit_items' permission!"}
+    return {'message': "You have 'items:edit' permission!"}
 
 
 if __name__ == '__main__':

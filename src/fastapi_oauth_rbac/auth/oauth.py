@@ -1,5 +1,7 @@
-from typing import Optional, Dict, Any
 import httpx
+
+from typing import Dict, Any
+
 from ..core.config import settings
 
 

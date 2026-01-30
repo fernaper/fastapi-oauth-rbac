@@ -1,4 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body, Request, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+    Body,
+    Request,
+    Response,
+)
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -32,11 +40,16 @@ class ResetPasswordRequest(BaseModel):
 
 
 @auth_router.post('/signup')
-async def signup(data: SignupRequest, db: AsyncSession = Depends(get_db)):
+async def signup(
+    request: Request, data: SignupRequest, db: AsyncSession = Depends(get_db)
+):
     if not settings.SIGNUP_ENABLED:
         raise HTTPException(status_code=400, detail='Signup is disabled')
 
-    stmt = select(User).where(User.email == data.email)
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = rbac_instance.user_model if rbac_instance else User
+
+    stmt = select(user_model).where(user_model.email == data.email)
     result = await db.execute(stmt)
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail='Email already registered')
@@ -45,7 +58,7 @@ async def signup(data: SignupRequest, db: AsyncSession = Depends(get_db)):
     result_role = await db.execute(stmt_role)
     user_role = result_role.scalar_one_or_none()
 
-    user = User(
+    user = user_model(
         email=data.email,
         hashed_password=hash_password(data.password),
         roles=[user_role] if user_role else [],
@@ -63,10 +76,13 @@ async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = rbac_instance.user_model if rbac_instance else User
+
     stmt = (
-        select(User)
-        .where(User.email == form_data.username)
-        .options(selectinload(User.roles))
+        select(user_model)
+        .where(user_model.email == form_data.username)
+        .options(selectinload(user_model.roles))
     )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
@@ -149,17 +165,23 @@ async def read_users_me(
 
 
 @auth_router.get('/verify')
-async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
+async def verify_email(
+    request: Request, token: str, db: AsyncSession = Depends(get_db)
+):
     try:
         payload = decode_token(token)
         email = payload.get('sub')
-        stmt = select(User).where(User.email == email)
+
+        rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+        user_model = rbac_instance.user_model if rbac_instance else User
+
+        stmt = select(user_model).where(user_model.email == email)
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=404, detail='User not found')
 
-        user.is_active = True
+        user.is_verified = True
         await db.commit()
         return {'message': 'Email verified successfully'}
     except Exception:
@@ -167,8 +189,13 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
 
 
 @auth_router.post('/forgot-password')
-async def forgot_password(email: EmailStr, db: AsyncSession = Depends(get_db)):
-    stmt = select(User).where(User.email == email)
+async def forgot_password(
+    request: Request, email: EmailStr, db: AsyncSession = Depends(get_db)
+):
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = rbac_instance.user_model if rbac_instance else User
+
+    stmt = select(user_model).where(user_model.email == email)
     result = await db.execute(stmt)
     if not result.scalar_one_or_none():
         return {
@@ -181,7 +208,9 @@ async def forgot_password(email: EmailStr, db: AsyncSession = Depends(get_db)):
 
 @auth_router.post('/reset-password')
 async def reset_password(
-    data: ResetPasswordRequest, db: AsyncSession = Depends(get_db)
+    request: Request,
+    data: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
 ):
     try:
         payload = decode_token(data.token)
@@ -189,7 +218,11 @@ async def reset_password(
             raise ValueError('Invalid token type')
 
         email = payload.get('sub')
-        stmt = select(User).where(User.email == email)
+
+        rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+        user_model = rbac_instance.user_model if rbac_instance else User
+
+        stmt = select(user_model).where(user_model.email == email)
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
         if not user:
@@ -210,10 +243,13 @@ async def google_callback(
         user_data = await GoogleOAuth.get_user_data(code, 'YOUR_REDIRECT_URI')
         email = user_data.get('email')
 
+        rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+        user_model = rbac_instance.user_model if rbac_instance else User
+
         stmt = (
-            select(User)
-            .where(User.email == email)
-            .options(selectinload(User.roles))
+            select(user_model)
+            .where(user_model.email == email)
+            .options(selectinload(user_model.roles))
         )
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
@@ -223,7 +259,7 @@ async def google_callback(
             result_role = await db.execute(stmt_role)
             user_role = result_role.scalar_one_or_none()
 
-            user = User(
+            user = user_model(
                 email=email,
                 oauth_provider='google',
                 oauth_id=user_data.get('sub'),

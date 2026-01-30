@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Set, Union
+from typing import Set, Union
 
 
 class Requirement(ABC):
@@ -23,14 +23,14 @@ class Permission(Requirement):
         if self.name in user_permissions:
             return True
 
-        if "*" in user_permissions:
+        if '*' in user_permissions:
             return True
 
         # Check for prefix:* matches
         for up in user_permissions:
-            if up.endswith(":*"):
+            if up.endswith(':*'):
                 prefix = up[:-2]
-                if self.name.startswith(prefix + ":"):
+                if self.name.startswith(prefix + ':'):
                     return True
         return False
 
@@ -41,7 +41,8 @@ class Permission(Requirement):
 class And(Requirement):
     def __init__(self, *requirements: Union[str, Requirement]):
         self.requirements = [
-            r if isinstance(r, Requirement) else Permission(r) for r in requirements
+            r if isinstance(r, Requirement) else Permission(r)
+            for r in requirements
         ]
 
     def evaluate(self, user_permissions: Set[str]) -> bool:
@@ -57,7 +58,8 @@ class And(Requirement):
 class Or(Requirement):
     def __init__(self, *requirements: Union[str, Requirement]):
         self.requirements = [
-            r if isinstance(r, Requirement) else Permission(r) for r in requirements
+            r if isinstance(r, Requirement) else Permission(r)
+            for r in requirements
         ]
 
     def evaluate(self, user_permissions: Set[str]) -> bool:

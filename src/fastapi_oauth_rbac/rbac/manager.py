@@ -1,12 +1,13 @@
-from typing import List, Set, Optional, Dict
+from typing import List, Set, Dict
+
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from ..database.models import (
     User,
     Role,
     Permission,
-    user_roles,
     role_permissions,
 )
 
@@ -103,13 +104,13 @@ class RBACManager:
         if permission_name in user_perms:
             return True
         # Global wildcard
-        if "*" in user_perms:
+        if '*' in user_perms:
             return True
         # Prefix wildcard
         for up in user_perms:
-            if up.endswith(":*"):
+            if up.endswith(':*'):
                 prefix = up[:-2]
-                if permission_name.startswith(prefix + ":"):
+                if permission_name.startswith(prefix + ':'):
                     return True
         return False
 

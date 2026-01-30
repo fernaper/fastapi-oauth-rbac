@@ -7,13 +7,12 @@ from fastapi import APIRouter, Depends, Request, Form, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select, func, or_, and_, distinct
+from sqlalchemy.orm import selectinload, aliased
 
 from ..database.models import User, Role, Permission
 from ..rbac.dependencies import (
     get_db,
-    get_current_user,
     get_current_user_optional,
     requires_permission,
 )
@@ -32,6 +31,9 @@ async def dashboard_index(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
+    pageSize: int = 10,
+    page: int = 0,
+    filter: Optional[str] = None,
 ):
     # 1. Check if user is logged in
     if not current_user:
@@ -50,10 +52,49 @@ async def dashboard_index(
 
     # 3. Standard Dashboard Logic
     # Fetch users with roles and permissions
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = rbac_instance.user_model if rbac_instance else User
+
+    # Base query for counts and filtering
+    base_stmt = select(user_model)
+    
+    # Filter logic
+    if filter:
+        filters = []
+        # Search by email (name)
+        filters.append(user_model.email.ilike(f'%{filter}%'))
+        
+        # Search by status/verified
+        if filter.lower() in ('active', 'inactive'):
+            filters.append(user_model.is_active == (filter.lower() == 'active'))
+        if filter.lower() in ('verified', 'unverified', 'pending'):
+            filters.append(user_model.is_verified == (filter.lower() == 'verified'))
+            
+        # Filter by roles
+        role_alias = aliased(Role)
+        # We check if any role name matches the filter
+        role_stmt = select(user_model.id).join(user_model.roles.of_type(role_alias)).where(role_alias.name.ilike(f'%{filter}%'))
+        filters.append(user_model.id.in_(role_stmt))
+        
+        base_stmt = base_stmt.where(or_(*filters))
+
+    # Total users (always same)
+    total_users_stmt = select(func.count()).select_from(user_model)
+    total_users_result = await db.execute(total_users_stmt)
+    total_users = total_users_result.scalar()
+
+    # Filtered users count
+    filtered_users_stmt = select(func.count()).select_from(base_stmt.subquery())
+    filtered_users_result = await db.execute(filtered_users_stmt)
+    filtered_users = filtered_users_result.scalar()
+
+    # Final query with pagination
     stmt = (
-        select(User)
-        .options(selectinload(User.roles).selectinload(Role.permissions))
-        .order_by(User.id)
+        base_stmt
+        .options(selectinload(user_model.roles).selectinload(Role.permissions))
+        .order_by(user_model.id)
+        .offset(page * pageSize)
+        .limit(pageSize)
     )
     result = await db.execute(stmt)
     users = result.scalars().all()
@@ -74,7 +115,12 @@ async def dashboard_index(
             'all_roles': all_roles,
             'user_email': current_user.email,
             'user_perms': user_perms,
-            'custom_css': '',  # Support for custom CSS later
+            'pageSize': pageSize,
+            'page': page,
+            'filter': filter or '',
+            'total_users': total_users,
+            'filtered_users': filtered_users,
+            'custom_css': '',
         },
     )
 
@@ -84,9 +130,17 @@ async def dashboard_index(
     dependencies=[requires_permission('users:verify')],
 )
 async def verify_user_action(
-    user_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db)
+    user_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    page: int = 0,
+    pageSize: int = 10,
+    filter: Optional[str] = None,
 ):
-    stmt = select(User).where(User.id == user_id)
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = rbac_instance.user_model if rbac_instance else User
+
+    stmt = select(user_model).where(user_model.id == user_id)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
@@ -95,8 +149,13 @@ async def verify_user_action(
 
     user.is_verified = not user.is_verified
     await db.commit()
+    
+    query = f'?page={page}&pageSize={pageSize}'
+    if filter:
+        query += f'&filter={filter}'
+        
     return RedirectResponse(
-        url=request.url_for('dashboard_index'),
+        url=f"{request.url_for('dashboard_index')}{query}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -106,9 +165,17 @@ async def verify_user_action(
     dependencies=[requires_permission('users:verify')],
 )
 async def toggle_user_active(
-    user_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db)
+    user_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    page: int = 0,
+    pageSize: int = 10,
+    filter: Optional[str] = None,
 ):
-    stmt = select(User).where(User.id == user_id)
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = rbac_instance.user_model if rbac_instance else User
+
+    stmt = select(user_model).where(user_model.id == user_id)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
@@ -117,8 +184,13 @@ async def toggle_user_active(
 
     user.is_active = not user.is_active
     await db.commit()
+    
+    query = f'?page={page}&pageSize={pageSize}'
+    if filter:
+        query += f'&filter={filter}'
+
     return RedirectResponse(
-        url=request.url_for('dashboard_index'),
+        url=f"{request.url_for('dashboard_index')}{query}",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -134,7 +206,10 @@ async def create_user_action(
     db: AsyncSession = Depends(get_db),
 ):
     # Check if exists
-    stmt = select(User).where(User.email == email)
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = rbac_instance.user_model if rbac_instance else User
+
+    stmt = select(user_model).where(user_model.email == email)
     result = await db.execute(stmt)
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail='User already exists')
@@ -144,7 +219,7 @@ async def create_user_action(
     result_role = await db.execute(stmt_role)
     user_role = result_role.scalar_one_or_none()
 
-    new_user = User(
+    new_user = user_model(
         email=email,
         hashed_password=hash_password(password),
         is_verified=is_verified,
@@ -167,8 +242,18 @@ async def update_user_roles(
     request: Request,
     role_ids: List[int] = Form([]),
     db: AsyncSession = Depends(get_db),
+    page: int = 0,
+    pageSize: int = 10,
+    filter: Optional[str] = None,
 ):
-    stmt = select(User).where(User.id == user_id).options(selectinload(User.roles))
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = rbac_instance.user_model if rbac_instance else User
+
+    stmt = (
+        select(user_model)
+        .where(user_model.id == user_id)
+        .options(selectinload(user_model.roles))
+    )
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
@@ -198,7 +283,9 @@ async def roles_index(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     if not current_user:
-        return templates.TemplateResponse('login.html.jinja', {'request': request})
+        return templates.TemplateResponse(
+            'login.html.jinja', {'request': request}
+        )
 
     rbac = RBACManager(db)
     if not await rbac.has_permission(current_user, 'roles:manage'):
@@ -209,7 +296,9 @@ async def roles_index(
         )
 
     # Fetch roles with permissions
-    stmt_roles = select(Role).options(selectinload(Role.permissions)).order_by(Role.id)
+    stmt_roles = (
+        select(Role).options(selectinload(Role.permissions)).order_by(Role.id)
+    )
     result_roles = await db.execute(stmt_roles)
     roles = result_roles.scalars().all()
 
@@ -250,12 +339,17 @@ async def create_role_action(
 
     role_perms = []
     if permission_ids:
-        stmt_perms = select(Permission).where(Permission.id.in_(permission_ids))
+        stmt_perms = select(Permission).where(
+            Permission.id.in_(permission_ids)
+        )
         result_perms = await db.execute(stmt_perms)
         role_perms = result_perms.scalars().all()
 
     new_role = Role(
-        name=name, description=description, permissions=list(role_perms), is_default=False
+        name=name,
+        description=description,
+        permissions=list(role_perms),
+        is_default=False,
     )
     db.add(new_role)
     await db.commit()
@@ -266,7 +360,8 @@ async def create_role_action(
 
 
 @dashboard_router.post(
-    '/role/delete/{role_id}', dependencies=[requires_permission('roles:manage')]
+    '/role/delete/{role_id}',
+    dependencies=[requires_permission('roles:manage')],
 )
 async def delete_role_action(
     role_id: int, request: Request, db: AsyncSession = Depends(get_db)
@@ -279,7 +374,9 @@ async def delete_role_action(
         raise HTTPException(status_code=404, detail='Role not found')
 
     if role.is_default:
-        raise HTTPException(status_code=400, detail='Cannot delete default roles')
+        raise HTTPException(
+            status_code=400, detail='Cannot delete default roles'
+        )
 
     await db.delete(role)
     await db.commit()
@@ -299,7 +396,11 @@ async def update_role_permissions(
     permission_ids: List[int] = Form([]),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(Role).where(Role.id == role_id).options(selectinload(Role.permissions))
+    stmt = (
+        select(Role)
+        .where(Role.id == role_id)
+        .options(selectinload(Role.permissions))
+    )
     result = await db.execute(stmt)
     role = result.scalar_one_or_none()
 
@@ -307,11 +408,15 @@ async def update_role_permissions(
         raise HTTPException(status_code=404, detail='Role not found')
 
     if role.is_default:
-        raise HTTPException(status_code=400, detail='Cannot edit default roles')
+        raise HTTPException(
+            status_code=400, detail='Cannot edit default roles'
+        )
 
     # Fetch new permissions
     if permission_ids:
-        stmt_perms = select(Permission).where(Permission.id.in_(permission_ids))
+        stmt_perms = select(Permission).where(
+            Permission.id.in_(permission_ids)
+        )
         result_perms = await db.execute(stmt_perms)
         new_perms = result_perms.scalars().all()
         role.permissions = list(new_perms)

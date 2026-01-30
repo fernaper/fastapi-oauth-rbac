@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Any, Union
+from typing import Optional
 from jose import jwt
 from pwdlib import PasswordHash
+
 from .config import settings
 
 password_hash = PasswordHash.recommended()

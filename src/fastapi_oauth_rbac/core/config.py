@@ -1,4 +1,5 @@
 from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +18,7 @@ class Settings(BaseSettings):
 
     # Default Admin (for quick start)
     ADMIN_EMAIL: str = 'admin@example.com'
-    ADMIN_PASSWORD: str = 'admin123'
+    ADMIN_PASSWORD: Optional[str] = None
 
     # Auth Flow Settings
     SIGNUP_ENABLED: bool = True
@@ -28,7 +29,11 @@ class Settings(BaseSettings):
     DASHBOARD_ENABLED: bool = True
     DASHBOARD_PATH: str = '/auth/dashboard'
 
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+    model_config = SettingsConfigDict(
+        env_file='.env',
+        extra='ignore',
+        env_prefix='FORBAC_',
+    )
 
 
 settings = Settings()

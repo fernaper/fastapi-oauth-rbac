@@ -1,10 +1,12 @@
 from fastapi import FastAPI, APIRouter, Depends
-from typing import Type, Optional, Callable, AsyncGenerator, List, Set
+import secrets
+import string
+from typing import Type, Optional, AsyncGenerator, List, Set
 from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from .rbac.dependencies import get_current_user
+
 from .database.models import Base, User, Role, Permission
 from .database.session import AsyncSessionLocal, engine, get_db
 from .core.config import settings
@@ -21,6 +23,7 @@ class FastAPIOAuthRBAC:
         dashboard_path: str = settings.DASHBOARD_PATH,
     ):
         self.app = app
+        self.user_model = user_model or User
         self.registered_roles = {}  # name -> {"description": str, "permissions": List[str]}
         self.require_verified = require_verified
         self.enable_dashboard = enable_dashboard
@@ -57,7 +60,7 @@ class FastAPIOAuthRBAC:
 
         # Register dashboard if enabled
         if self.enable_dashboard:
-            self._register_dashboard()
+            self.include_dashboard()
 
     def include_auth_router(self, prefix: str = '/auth'):
         from .auth.router import auth_router
@@ -66,7 +69,7 @@ class FastAPIOAuthRBAC:
         self.app.state.oauth_rbac = self
         self.app.include_router(auth_router, prefix=prefix)
 
-    def _register_dashboard(self):
+    def include_dashboard(self):
         """Registers the internal Jinja2 dashboard."""
         from .dashboard.router import dashboard_router
 
@@ -222,25 +225,93 @@ class FastAPIOAuthRBAC:
         # 7. Second pass: handle Role Hierarchy
         for name, (_, _, parent_name) in all_roles_to_setup.items():
             if parent_name and parent_name in existing_roles:
-                existing_roles[name].parent_id = existing_roles[
-                    parent_name
-                ].id
+                existing_roles[name].parent_id = existing_roles[parent_name].id
 
         await db.flush()
 
         # 6. Initial Admin User
         admin_email = settings.ADMIN_EMAIL
-        stmt = select(User).where(User.email == admin_email)
+        stmt = select(self.user_model).where(
+            self.user_model.email == admin_email
+        )
         result = await db.execute(stmt)
         if not result.scalar_one_or_none():
             admin_role = existing_roles.get('admin')
 
-            admin_user = User(
+            admin_password = settings.ADMIN_PASSWORD
+            if not admin_password:
+                # Generate a secure random password
+                alphabet = string.ascii_letters + string.digits
+                admin_password = ''.join(
+                    secrets.choice(alphabet) for _ in range(12)
+                )
+                print('\n' + '=' * 60)
+                print('🚀 SECURITY INITIALIZATION')
+                print('=' * 60)
+                print(f'Admin user created: {admin_email}')
+                print(f'Generated password: {admin_password}')
+                print('\n' + '⚠️  IMPORTANT:')
+                print('Save this password securely!')
+                print('To change it, you can use the CLI:')
+                print(
+                    '  python -m fastapi_oauth_rbac.main set-password "admin@example.com" "new_password"'
+                )
+                print('=' * 60 + '\n')
+
+            admin_user = self.user_model(
                 email=admin_email,
-                hashed_password=hash_password(settings.ADMIN_PASSWORD),
+                hashed_password=hash_password(admin_password),
                 is_verified=True,
                 roles=[admin_role] if admin_role else [],
             )
             db.add(admin_user)
 
         await db.commit()
+
+    async def set_user_password(self, email: str, password: str):
+        """Helper to update a user's password directly."""
+        async with AsyncSessionLocal() as session:
+            stmt = select(self.user_model).where(
+                self.user_model.email == email
+            )
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+            if not user:
+                print(f'User {email} not found.')
+                return False
+
+            user.hashed_password = hash_password(password)
+            await session.commit()
+            print(f'Successfully updated password for {email}.')
+            return True
+
+
+if __name__ == '__main__':
+    import argparse
+    import asyncio
+
+    async def main():
+        parser = argparse.ArgumentParser(
+            description='FastAPIOAuthRBAC CLI Utility'
+        )
+        subparsers = parser.add_subparsers(dest='command', help='Commands')
+
+        # set-password command
+        pwd_parser = subparsers.add_parser(
+            'set-password', help='Update a user password'
+        )
+        pwd_parser.add_argument('email', help='Email of the user')
+        pwd_parser.add_argument('password', help='New password to set')
+
+        args = parser.parse_args()
+
+        if args.command == 'set-password':
+            # We need a dummy app to initialize the class
+            from fastapi import FastAPI
+
+            auth = FastAPIOAuthRBAC(FastAPI())
+            await auth.set_user_password(args.email, args.password)
+        else:
+            parser.print_help()
+
+    asyncio.run(main())
