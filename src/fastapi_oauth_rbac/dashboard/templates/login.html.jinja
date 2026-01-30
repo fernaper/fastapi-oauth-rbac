@@ -1,0 +1,75 @@
+{% extends "layouts/base.html.jinja" %}
+
+{% block title %}Login - RBAC Admin{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-center" style="min-height: 60vh;">
+    <div class="glass-card p-8 w-full" style="max-width: 450px;">
+        <div class="text-center mb-10">
+            <h1 class="text-3xl font-bold mb-2">Access Portal</h1>
+            <p class="text-muted">Authentication required for dashboard access.</p>
+        </div>
+
+        <form id="loginForm" class="flex flex-col gap-6">
+            <div class="form-group">
+                <label class="form-label">Network Identity</label>
+                <input type="email" id="email" class="form-control" placeholder="admin@organization.com" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Access Passphrase</label>
+                <input type="password" id="password" class="form-control" placeholder="••••••••••••" required>
+            </div>
+
+            <div id="loginError" class="badge badge-danger w-full py-3"
+                style="display: none; justify-content: center; margin-bottom: 1rem;">
+                Invalid credentials or insufficient permissions.
+            </div>
+
+            <button type="submit" class="btn btn-primary w-full py-4 text-lg" style="justify-content: center;">
+                Establish Secure Session
+            </button>
+        </form>
+
+        <div class="mt-8 text-center">
+            <p class="text-sm text-muted">Protected by FastAPIOAuthRBAC</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const errorDiv = document.getElementById('loginError');
+
+        errorDiv.style.display = 'none';
+
+        try {
+            const formData = new FormData();
+            formData.append('username', email);
+            formData.append('password', password);
+
+            const response = await fetch('/auth/login', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                // Store token in cookie so the backend can see it in subsequent requests
+                document.cookie = `access_token=${data.access_token}; path=/; max-age=1800; samesite=strict`;
+                // Also store in localStorage if needed for JS
+                localStorage.setItem('access_token', data.access_token);
+
+                window.location.reload();
+            } else {
+                errorDiv.style.display = 'flex';
+            }
+        } catch (err) {
+            console.error('Login error:', err);
+            errorDiv.style.display = 'flex';
+        }
+    });
+</script>
+{% endblock %}
