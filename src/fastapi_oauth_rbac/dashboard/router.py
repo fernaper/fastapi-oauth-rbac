@@ -57,25 +57,33 @@ async def dashboard_index(
 
     # Base query for counts and filtering
     base_stmt = select(user_model)
-    
+
     # Filter logic
     if filter:
         filters = []
         # Search by email (name)
         filters.append(user_model.email.ilike(f'%{filter}%'))
-        
+
         # Search by status/verified
         if filter.lower() in ('active', 'inactive'):
-            filters.append(user_model.is_active == (filter.lower() == 'active'))
+            filters.append(
+                user_model.is_active == (filter.lower() == 'active')
+            )
         if filter.lower() in ('verified', 'unverified', 'pending'):
-            filters.append(user_model.is_verified == (filter.lower() == 'verified'))
-            
+            filters.append(
+                user_model.is_verified == (filter.lower() == 'verified')
+            )
+
         # Filter by roles
         role_alias = aliased(Role)
         # We check if any role name matches the filter
-        role_stmt = select(user_model.id).join(user_model.roles.of_type(role_alias)).where(role_alias.name.ilike(f'%{filter}%'))
+        role_stmt = (
+            select(user_model.id)
+            .join(user_model.roles.of_type(role_alias))
+            .where(role_alias.name.ilike(f'%{filter}%'))
+        )
         filters.append(user_model.id.in_(role_stmt))
-        
+
         base_stmt = base_stmt.where(or_(*filters))
 
     # Total users (always same)
@@ -84,14 +92,17 @@ async def dashboard_index(
     total_users = total_users_result.scalar()
 
     # Filtered users count
-    filtered_users_stmt = select(func.count()).select_from(base_stmt.subquery())
+    filtered_users_stmt = select(func.count()).select_from(
+        base_stmt.subquery()
+    )
     filtered_users_result = await db.execute(filtered_users_stmt)
     filtered_users = filtered_users_result.scalar()
 
     # Final query with pagination
     stmt = (
-        base_stmt
-        .options(selectinload(user_model.roles).selectinload(Role.permissions))
+        base_stmt.options(
+            selectinload(user_model.roles).selectinload(Role.permissions)
+        )
         .order_by(user_model.id)
         .offset(page * pageSize)
         .limit(pageSize)
@@ -149,13 +160,13 @@ async def verify_user_action(
 
     user.is_verified = not user.is_verified
     await db.commit()
-    
+
     query = f'?page={page}&pageSize={pageSize}'
     if filter:
         query += f'&filter={filter}'
-        
+
     return RedirectResponse(
-        url=f"{request.url_for('dashboard_index')}{query}",
+        url=f'{request.url_for("dashboard_index")}{query}',
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
@@ -184,13 +195,13 @@ async def toggle_user_active(
 
     user.is_active = not user.is_active
     await db.commit()
-    
+
     query = f'?page={page}&pageSize={pageSize}'
     if filter:
         query += f'&filter={filter}'
 
     return RedirectResponse(
-        url=f"{request.url_for('dashboard_index')}{query}",
+        url=f'{request.url_for("dashboard_index")}{query}',
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
