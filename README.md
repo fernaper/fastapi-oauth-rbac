@@ -13,6 +13,7 @@ The documentation has been significantly improved and split into easy-to-digest 
 - **[⚙️ Configuration](docs/configuration.md)** - Environment variables and setup.
 - **[🛡️ NIST RBAC Model](docs/rbac.md)** - Learn about roles, hierarchies, and permissions.
 - **[🖥️ Admin Dashboard](docs/dashboard.md)** - Guide to the visual administration panel.
+- **[💻 Frontend Integration](docs/frontend-integration.md)** - Vanilla JS & React guides.
 
 ---
 

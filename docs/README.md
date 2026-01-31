@@ -14,6 +14,7 @@ Welcome to the comprehensive documentation for **FastAPIOAuthRBAC**. This librar
 | 🏗️ **[Architecture](architecture.md)** | Internal design, database schema, and security flow. |
 | 🧪 **[Testing](testing.md)** | How to test your application with RBAC helpers. |
 | 🏢 **[Multi-tenancy](multi-tenancy.md)** | Scoping users and roles to tenants. |
+| 💻 **[Frontend Integration](frontend-integration.md)** | Guides for Vanilla JS and React integration. |
 
 ---
 

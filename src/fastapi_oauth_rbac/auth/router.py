@@ -1,3 +1,5 @@
+import json
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -40,6 +42,11 @@ class SignupRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
+
+
+class GoogleAuthRequest(BaseModel):
+    code: str
+    redirect_uri: Optional[str] = None
 
 
 @auth_router.post('/signup')
@@ -393,6 +400,93 @@ async def reset_password(
         raise HTTPException(status_code=400, detail='Invalid or expired token')
 
 
+async def _process_google_login(
+    request: Request, code: str, redirect_uri: str, db: AsyncSession
+):
+    """
+    Shared logic for processing Google Login (Code Exchange -> User Provisioning -> Token Issuance).
+    Returns a Response object with tokens and cookies set.
+    """
+    user_data = await GoogleOAuth.get_user_data(code, redirect_uri)
+    email = user_data.get('email')
+
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = rbac_instance.user_model if rbac_instance else User
+
+    stmt = (
+        select(user_model)
+        .where(user_model.email == email)
+        .options(selectinload(user_model.roles))
+    )
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if not user:
+        stmt_role = select(Role).where(Role.name == 'user')
+        result_role = await db.execute(stmt_role)
+        user_role = result_role.scalar_one_or_none()
+
+        user = user_model(
+            email=email,
+            oauth_provider='google',
+            oauth_id=user_data.get('sub'),
+            roles=[user_role] if user_role else [],
+            is_verified=True,  # OAuth users are usually considered verified
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user, ['roles'])
+
+    # Verification check for OAuth too
+    if (
+        rbac_instance
+        and rbac_instance.require_verified
+        and not user.is_verified
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail='USER_NOT_VERIFIED',
+        )
+
+    rbac = RBACManager(db)
+    permissions = await rbac.get_user_permissions(user)
+    access_token = create_access_token(
+        data={'sub': user.email, 'scopes': list(permissions)}
+    )
+
+    # Set cookie for dashboard access
+    response = Response(
+        content=json.dumps({
+            'access_token': access_token,
+            'token_type': 'bearer',
+            'user': {
+                'email': user.email,
+                'roles': [r.name for r in user.roles],
+            }
+        }),
+        media_type='application/json',
+    )
+    response.set_cookie(
+        key='access_token',
+        value=access_token,
+        httponly=False,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path='/',
+    )
+
+    # Audit Log
+    if rbac_instance:
+        audit = AuditManager(db)
+        await audit.log(
+            actor_email=user.email,
+            action='USER_LOGIN_GOOGLE',
+            target=user.email,
+            enabled=rbac_instance.enable_audit,
+        )
+
+    return response
+
+
 @auth_router.get('/google/callback')
 async def google_callback(
     request: Request, code: str, db: AsyncSession = Depends(get_db)
@@ -401,82 +495,25 @@ async def google_callback(
         redirect_uri = settings.GOOGLE_OAUTH_REDIRECT_URI or str(
             request.url_for('google_callback')
         )
-        user_data = await GoogleOAuth.get_user_data(code, redirect_uri)
-        email = user_data.get('email')
+        return await _process_google_login(request, code, redirect_uri, db)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-        rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
-        user_model = rbac_instance.user_model if rbac_instance else User
 
-        stmt = (
-            select(user_model)
-            .where(user_model.email == email)
-            .options(selectinload(user_model.roles))
-        )
-        result = await db.execute(stmt)
-        user = result.scalar_one_or_none()
-
-        if not user:
-            stmt_role = select(Role).where(Role.name == 'user')
-            result_role = await db.execute(stmt_role)
-            user_role = result_role.scalar_one_or_none()
-
-            user = user_model(
-                email=email,
-                oauth_provider='google',
-                oauth_id=user_data.get('sub'),
-                roles=[user_role] if user_role else [],
-                is_verified=True,  # OAuth users are usually considered verified
-            )
-            db.add(user)
-            await db.commit()
-            await db.refresh(user, ['roles'])
-
-        # Verification check for OAuth too
-        rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
-        if (
-            rbac_instance
-            and rbac_instance.require_verified
-            and not user.is_verified
-        ):
-            # For Google, maybe they should be verified by default?
-            # But let's follow the strict rule if set.
+@auth_router.post('/google/exchange')
+async def google_exchange(
+    request: Request,
+    data: GoogleAuthRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        # For SPA, usually the redirect_uri is the origin or configured one
+        redirect_uri = data.redirect_uri or settings.GOOGLE_OAUTH_REDIRECT_URI
+        if not redirect_uri:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail='USER_NOT_VERIFIED',
+                status_code=400, detail='Redirect URI is required'
             )
 
-        rbac = RBACManager(db)
-        permissions = await rbac.get_user_permissions(user)
-        access_token = create_access_token(
-            data={'sub': user.email, 'scopes': list(permissions)}
-        )
-
-        # Set cookie for dashboard access
-        response = Response(
-            content='{"access_token": "'
-            + access_token
-            + '", "token_type": "bearer"}',
-            media_type='application/json',
-        )
-        response.set_cookie(
-            key='access_token',
-            value=access_token,
-            httponly=False,
-            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            path='/',
-        )
-
-        # Audit Log
-        rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
-        if rbac_instance:
-            audit = AuditManager(db)
-            await audit.log(
-                actor_email=user.email,
-                action='USER_LOGIN_GOOGLE',
-                target=user.email,
-                enabled=rbac_instance.enable_audit,
-            )
-
-        return response
+        return await _process_google_login(request, data.code, redirect_uri, db)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
