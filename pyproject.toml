@@ -1,6 +1,6 @@
 [project]
 name = "fastapi-oauth-rbac"
-version = "0.1.0"
+version = "0.1.1"
 description = "Add your description here"
 readme = "README.md"
 authors = [
@@ -8,7 +8,6 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "aiosqlite>=0.22.1",
     "alembic>=1.18.3",
     "argon2-cffi>=25.1.0",
     "email-validator>=2.2.0",
@@ -23,6 +22,10 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.46",
     "uvicorn>=0.34.0",
 ]
+
+[project.optional-dependencies]
+postgres = ["asyncpg>=0.29.0"]
+sqlite = ["aiosqlite>=0.20.0"]
 
 [build-system]
 requires = ["uv_build>=0.9.15,<0.10.0"]

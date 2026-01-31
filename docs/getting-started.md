@@ -13,11 +13,17 @@ This guide will help you get up and running with **FastAPIOAuthRBAC** in your Fa
 You can install the library directly from your preferred package manager:
 
 ```bash
-# Using pip
+# Basic installation (no DB driver)
 pip install fastapi-oauth-rbac
 
-# Using uv (Recommended)
-uv add fastapi-oauth-rbac
+# With SQLite support
+pip install "fastapi-oauth-rbac[sqlite]"
+
+# With PostgreSQL support
+pip install "fastapi-oauth-rbac[postgres]"
+
+# Using uv
+uv add fastapi-oauth-rbac --extra sqlite
 ```
 
 ## 🛠️ Basic Integration

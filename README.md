@@ -39,6 +39,16 @@ auth.include_auth_router()
 auth.include_dashboard()
 ```
 
+### 📦 Installation Extras
+
+```bash
+# For PostgreSQL support
+pip install "fastapi-oauth-rbac[postgres]"
+
+# For SQLite support (async)
+pip install "fastapi-oauth-rbac[sqlite]"
+```
+
 ## Features
 - **Asynchronous**: Full support for `aiosqlite`, `asyncpg`, etc.
 - **NIST RBAC**: Advanced Role-Based Access Control with hierarchy.
