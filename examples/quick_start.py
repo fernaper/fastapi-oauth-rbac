@@ -16,7 +16,7 @@ app = FastAPI(title='Async Quick Start')
 auth = FastAPIOAuthRBAC(app, enable_dashboard=True, require_verified=True)
 
 # 2. Register Custom Roles (Optional)
-auth.add_role('editor', 'Can manage content', ['content:edit', 'content:view'])
+auth.add_role('editor', 'Can manage content', ['content:update', 'content:read'])
 auth.add_role('content_manager', 'Can manage all content', ['content:*'])
 
 # 3. Include the authentication router
@@ -43,10 +43,10 @@ async def admin_only():
 
 @app.get(
     '/multi-perm',
-    dependencies=[requires_permission(['users:view', 'dashboard:view'])],
+    dependencies=[requires_permission(['users:read', 'dashboard:read'])],
 )
 async def multi_perm():
-    """Requires BOTH users:view AND dashboard:view (List input means AND)"""
+    """Requires BOTH users:read AND dashboard:read (List input means AND)"""
     return {'message': 'You have both required permissions!'}
 
 
@@ -61,10 +61,10 @@ async def complex_logic():
     return {'message': 'You passed the complex logic check!'}
 
 
-@app.get('/content/view', dependencies=[requires_permission('content:view')])
+@app.get('/content/view', dependencies=[requires_permission('content:read')])
 async def content_view():
     """Matches 'content:*' wildcard granted to content_manager"""
-    return {'message': 'Access granted to content:view via wildcard!'}
+    return {'message': 'Access granted to content:read via wildcard!'}
 
 
 if __name__ == '__main__':

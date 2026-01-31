@@ -78,6 +78,7 @@ async def signup(
         action='USER_SIGNUP',
         target=user.email,
         details=f'Tenant: {user.tenant_id}',
+        enabled=rbac_instance.enable_audit if rbac_instance else True,
     )
 
     # 1. Trigger Hook
@@ -169,6 +170,15 @@ async def login_for_access_token(
     # Trigger Login Hook
     if rbac_instance:
         await rbac_instance.hooks.trigger('post_login', user)
+        # Audit Log
+        audit = AuditManager(db)
+        await audit.log(
+            actor_email=user.email,
+            action='USER_LOGIN',
+            target=user.email,
+            ip_address=request.client.host if request.client else None,
+            enabled=rbac_instance.enable_audit,
+        )
 
     return {
         'access_token': access_token,
@@ -455,6 +465,18 @@ async def google_callback(
             max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             path='/',
         )
+
+        # Audit Log
+        rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+        if rbac_instance:
+            audit = AuditManager(db)
+            await audit.log(
+                actor_email=user.email,
+                action='USER_LOGIN_GOOGLE',
+                target=user.email,
+                enabled=rbac_instance.enable_audit,
+            )
+
         return response
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

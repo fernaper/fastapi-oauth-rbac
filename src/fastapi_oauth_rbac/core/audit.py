@@ -16,8 +16,12 @@ class AuditManager:
         target: Optional[str] = None,
         details: Optional[str] = None,
         ip_address: Optional[str] = None,
+        enabled: bool = True,
     ):
         """Create an audit log entry."""
+        if not enabled:
+            return
+
         log_entry = AuditLog(
             actor_email=actor_email,
             action=action,

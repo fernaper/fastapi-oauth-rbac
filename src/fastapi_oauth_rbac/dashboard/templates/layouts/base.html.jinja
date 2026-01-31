@@ -449,6 +449,12 @@
                         Roles
                     </a>
                     {% endif %}
+                    {% if 'dashboard.audit:read' in user_perms %}
+                    <a href="{{ url_for('audit_dashboard') }}"
+                        class="nav-link {% if request.url.path == url_for('audit_dashboard') %}active{% endif %}">
+                        Audit
+                    </a>
+                    {% endif %}
                 </nav>
             </div>
             {% if user_email %}

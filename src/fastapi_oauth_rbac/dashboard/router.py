@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload, aliased
 
 from ..core.security import hash_password
 from ..core.audit import AuditManager
-from ..database.models import User, Role, Permission
+from ..database.models import AuditLog, Permission, Role, User
 from ..rbac.dependencies import (
     get_db,
     get_current_user_optional,
@@ -21,6 +21,73 @@ from ..rbac.dependencies import (
 from ..rbac.manager import RBACManager
 
 dashboard_router = APIRouter(tags=['Dashboard'])
+
+
+@dashboard_router.get('/audit', response_class=HTMLResponse)
+async def audit_dashboard(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    pageSize: int = 15,
+    page: int = 0,
+    filter: Optional[str] = None,
+):
+    # 1. Check permissions
+    if not current_user:
+        return RedirectResponse(
+            url=request.url_for('dashboard_index'),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    rbac = RBACManager(db)
+    if not await rbac.has_permission(current_user, 'dashboard.audit:read'):
+        return templates.TemplateResponse(
+            'access_denied.html.jinja',
+            {'request': request, 'user_email': current_user.email},
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    # 2. Fetch logs
+    stmt = select(AuditLog).order_by(AuditLog.timestamp.desc())
+
+    if filter:
+        stmt = stmt.where(
+            or_(
+                AuditLog.actor_email.ilike(f'%{filter}%'),
+                AuditLog.action.ilike(f'%{filter}%'),
+                AuditLog.target.ilike(f'%{filter}%'),
+                AuditLog.details.ilike(f'%{filter}%'),
+            )
+        )
+
+    # Total count
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    count_result = await db.execute(count_stmt)
+    total_logs = count_result.scalar()
+
+    # Pagination
+    stmt = stmt.offset(page * pageSize).limit(pageSize)
+    result = await db.execute(stmt)
+    logs = result.scalars().all()
+
+    # Get user permissions for UI toggles
+    user_perms = await rbac.get_user_permissions(current_user)
+
+    return templates.TemplateResponse(
+        'audit.html.jinja',
+        {
+            'request': request,
+            'logs': logs,
+            'page': page,
+            'pageSize': pageSize,
+            'total_logs': total_logs,
+            'filter': filter,
+            'user': current_user,
+            'user_email': current_user.email,
+            'user_perms': user_perms,
+            'custom_css': '',
+        },
+    )
 
 # Set up templates directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -44,7 +111,7 @@ async def dashboard_index(
 
     # 2. Check if user has permission to view dashboard
     rbac = RBACManager(db)
-    if not await rbac.has_permission(current_user, 'dashboard:view'):
+    if not await rbac.has_permission(current_user, 'dashboard:read'):
         return templates.TemplateResponse(
             'access_denied.html.jinja',
             {'request': request, 'user_email': current_user.email},
@@ -175,6 +242,7 @@ async def verify_user_action(
         target=user.email,
         details=f'Verified: {user.is_verified}',
         ip_address=request.client.host if request.client else None,
+        enabled=rbac_instance.enable_audit if rbac_instance else True,
     )
 
     query = f'?page={page}&pageSize={pageSize}'
@@ -211,6 +279,22 @@ async def toggle_user_active(
 
     user.is_active = not user.is_active
     await db.commit()
+
+    # Audit Log
+    audit = AuditManager(db)
+    current_user = await get_current_user_optional(
+        request,
+        request.cookies.get('access_token'),
+        db,
+    )
+    await audit.log(
+        actor_email=current_user.email if current_user else 'system',
+        action='USER_TOGGLE_ACTIVE',
+        target=user.email,
+        details=f'Active: {user.is_active}',
+        ip_address=request.client.host if request.client else None,
+        enabled=rbac_instance.enable_audit if rbac_instance else True,
+    )
 
     query = f'?page={page}&pageSize={pageSize}'
     if filter:
@@ -254,6 +338,22 @@ async def create_user_action(
     )
     db.add(new_user)
     await db.commit()
+    await db.refresh(new_user)
+
+    # Audit Log
+    audit = AuditManager(db)
+    current_user = await get_current_user_optional(
+        request,
+        request.cookies.get('access_token'),
+        db,
+    )
+    await audit.log(
+        actor_email=current_user.email if current_user else 'system',
+        action='USER_CREATED_DASHBOARD',
+        target=new_user.email,
+        ip_address=request.client.host if request.client else None,
+        enabled=rbac_instance.enable_audit if rbac_instance else True,
+    )
     return RedirectResponse(
         url=request.url_for('dashboard_index'),
         status_code=status.HTTP_303_SEE_OTHER,
@@ -310,6 +410,7 @@ async def update_user_roles(
         target=user.email,
         details=f'New role IDs: {role_ids}',
         ip_address=request.client.host if request.client else None,
+        enabled=rbac_instance.enable_audit if rbac_instance else True,
     )
 
     return RedirectResponse(

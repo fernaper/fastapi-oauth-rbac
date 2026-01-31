@@ -8,7 +8,7 @@ By default, the dashboard is available at:
 `http://your-app-url/auth/dashboard/`
 
 > [!NOTE]
-> Access to the dashboard itself is protected. Only users with the `dashboard:view` permission (included in the default `Admin` role) can log in.
+> Access to the dashboard itself is protected. Only users with the `dashboard:read` permission (included in the default `Admin` role) can log in.
 
 ## 👥 User Management
 

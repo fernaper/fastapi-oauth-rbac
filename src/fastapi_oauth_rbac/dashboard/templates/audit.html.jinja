@@ -1,0 +1,257 @@
+{% extends "layouts/base.html.jinja" %}
+
+{% block title %}Audit Logs - {{ request.app.title }}{% endblock %}
+
+{% block content %}
+<style>
+    .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2.5rem;
+    }
+
+    .header-text h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        letter-spacing: -0.025em;
+    }
+
+    .audit-table {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .table-header {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr 1.5fr 2fr 1fr;
+        padding: 1.25rem 2rem;
+        background: rgba(255, 255, 255, 0.02);
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-muted);
+    }
+
+    .table-row {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr 1.5fr 2fr 1fr;
+        padding: 1.25rem 2rem;
+        align-items: center;
+        border-bottom: 1px solid var(--border-color);
+        transition: all 0.2s ease;
+    }
+
+    .table-row:last-child {
+        border-bottom: none;
+    }
+
+    .table-row:hover {
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .log-timestamp {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        font-family: monospace;
+    }
+
+    .log-action {
+        font-weight: 700;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+    }
+
+    .log-email {
+        color: var(--accent-color);
+        font-weight: 600;
+        font-size: 0.875rem;
+    }
+
+    .log-details {
+        font-size: 0.8125rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Filter and Pagination Styles */
+    .filter-bar {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .search-input-wrapper {
+        position: relative;
+        flex: 1;
+        min-width: 300px;
+    }
+
+    .search-input-wrapper i {
+        position: absolute;
+        left: 1rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+    }
+
+    .search-input-wrapper input {
+        padding-left: 2.75rem !important;
+    }
+
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.5rem 2rem;
+        background: rgba(255, 255, 255, 0.02);
+        border-top: 1px solid var(--border-color);
+    }
+
+    .pagination-info {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+    }
+
+    .pagination-info b {
+        color: var(--text-main);
+    }
+
+    .pagination-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .page-link {
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+        border: 1px solid var(--border-color);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-main);
+        text-decoration: none;
+        font-size: 0.875rem;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .page-link:hover:not(.disabled) {
+        border-color: var(--accent-color);
+        background: rgba(56, 189, 248, 0.1);
+        color: var(--accent-color);
+    }
+
+    .page-link.disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+
+    .action-badge {
+        display: inline-block;
+        padding: 0.125rem 0.5rem;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border-color);
+    }
+</style>
+
+<div class="dashboard-header animate-fade-in">
+    <div class="header-text">
+        <h1>Audit Registry</h1>
+        <p class="text-muted">Tracking all administrative and security actions across the system.</p>
+    </div>
+</div>
+
+<div class="glass-card animate-fade-in" style="overflow: hidden; animation-delay: 0.1s;">
+    <div style="padding: 1.5rem 2rem; border-bottom: 1px solid var(--border-color);">
+        <form action="{{ url_for('audit_dashboard') }}" method="GET" class="filter-bar">
+            <div class="search-input-wrapper">
+                <i class="fas fa-search"></i>
+                <input type="text" name="filter" value="{{ filter or '' }}" class="form-control"
+                    placeholder="Search logs by actor, action, target or details...">
+            </div>
+            <input type="hidden" name="pageSize" value="{{ pageSize }}">
+            <button type="submit" class="btn btn-primary">
+                <span>Filter</span>
+            </button>
+            {% if filter %}
+            <a href="{{ url_for('audit_dashboard') }}?pageSize={{ pageSize }}" class="btn btn-outline">
+                <span>Clear</span>
+            </a>
+            {% endif %}
+        </form>
+    </div>
+
+    <div class="audit-table">
+        <div class="table-header">
+            <div>Timestamp</div>
+            <div>Action</div>
+            <div>Actor</div>
+            <div>Target / Details</div>
+            <div>IP Address</div>
+        </div>
+
+        {% if not logs %}
+        <div class="table-row" style="display: flex; flex-direction: column; text-align: center; padding: 6rem 2rem;">
+            <i class="fas fa-clipboard-list text-muted" style="font-size: 3rem; margin-bottom: 1.5rem;"></i>
+            <p class="text-muted font-bold">No audit entries found.</p>
+            <p class="text-muted text-sm" style="margin-top: 0.5rem;">The registry is currently empty or no logs match
+                your filter.</p>
+        </div>
+        {% endif %}
+
+        {% for log in logs %}
+        <div class="table-row">
+            <div class="log-timestamp" title="{{ log.timestamp }}">
+                {{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}
+            </div>
+            <div>
+                <span class="log-action action-badge">{{ log.action }}</span>
+            </div>
+            <div class="log-email">
+                {{ log.actor_email }}
+            </div>
+            <div class="log-details">
+                {% if log.target %}
+                <span class="text-accent">@{{ log.target }}</span>
+                {% endif %}
+                {% if log.details %}
+                <span class="text-muted">- {{ log.details }}</span>
+                {% endif %}
+            </div>
+            <div class="text-sm text-muted">
+                {{ log.ip_address or '---' }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="pagination-container">
+        <div class="pagination-info">
+            Showing <b>{{ logs|length }}</b> of <b>{{ total_logs }}</b> entries
+        </div>
+        <div class="pagination-actions">
+            <a href="{{ url_for('audit_dashboard') }}?page={{ page - 1 }}&pageSize={{ pageSize }}&filter={{ filter or '' }}"
+                class="page-link {% if page <= 0 %}disabled{% endif %}">
+                <i class="fas fa-chevron-left"></i>
+                <span>Previous</span>
+            </a>
+            <a href="{{ url_for('audit_dashboard') }}?page={{ page + 1 }}&pageSize={{ pageSize }}&filter={{ filter or '' }}"
+                class="page-link {% if (page + 1) * pageSize >= total_logs %}disabled{% endif %}">
+                <span>Next</span>
+                <i class="fas fa-chevron-right"></i>
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

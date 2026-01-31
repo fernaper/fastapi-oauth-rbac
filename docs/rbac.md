@@ -25,7 +25,7 @@ If a route requires the `user:profile:edit` permission, and that permission is a
 Permissions are strings following the `resource:action` pattern (though any string works).
 
 - `articles:create`
-- `billing:view_invoice`
+- `billing.invoice:read`
 - `system:reboot`
 
 ### Wildcards

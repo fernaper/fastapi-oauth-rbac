@@ -26,6 +26,7 @@ class FastAPIOAuthRBAC:
         enable_dashboard: bool = settings.DASHBOARD_ENABLED,
         dashboard_path: str = settings.DASHBOARD_PATH,
         email_exporter: Optional[BaseEmailExporter] = None,
+        enable_audit: bool = True,
     ):
         self.app = app
         self.user_model = user_model or User
@@ -35,6 +36,7 @@ class FastAPIOAuthRBAC:
         self.dashboard_path = dashboard_path
         self.email_exporter = email_exporter or ConsoleEmailExporter()
         self.hooks = hooks
+        self.enable_audit = enable_audit
 
         # Default dependency override
         self.app.dependency_overrides[get_db] = get_db
@@ -50,7 +52,16 @@ class FastAPIOAuthRBAC:
             # though usually people use Alembic)
             # For now keep it as a convenience, maybe add a flag for it later
             async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
+                if self.enable_audit:
+                    await conn.run_sync(Base.metadata.create_all)
+                else:
+                    # Filter out audit_logs table
+                    tables = [
+                        table
+                        for name, table in Base.metadata.tables.items()
+                        if name != 'audit_logs'
+                    ]
+                    await conn.run_sync(Base.metadata.create_all, tables=tables)
 
             # 2. Setup defaults (Mandatory)
             async with AsyncSessionLocal() as session:
@@ -122,7 +133,8 @@ class FastAPIOAuthRBAC:
             'users:delete': 'Can delete users',
             'users:verify': 'Can verify/deactivate users',
             'roles:manage': 'Can manage roles and permissions',
-            'dashboard:view': 'Can view the internal dashboard',
+            'dashboard:read': 'Can view the internal dashboard',
+            'dashboard.audit:read': 'Can view system audit logs',
         }
 
         # Discover permissions from routes
@@ -133,7 +145,7 @@ class FastAPIOAuthRBAC:
             'user': ('Standard user access', [], None),
             'user_manager': (
                 'Can manage users but not roles',
-                ['users:write', 'users:verify', 'dashboard:view'],
+                ['users:write', 'users:verify', 'dashboard:read'],
                 'user',
             ),
             'user_admin': (

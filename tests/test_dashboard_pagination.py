@@ -68,7 +68,7 @@ async def test_dashboard_pagination_and_filtering():
         ) as MockRBAC:
             rbac_mock = AsyncMock()
             rbac_mock.has_permission.return_value = True
-            rbac_mock.get_user_permissions.return_value = ['dashboard:view']
+            rbac_mock.get_user_permissions.return_value = ['dashboard:read']
             MockRBAC.return_value = rbac_mock
 
             with patch(

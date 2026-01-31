@@ -50,7 +50,7 @@ async def test_role_registration():
 
     # Register a custom role
     auth.add_role(
-        'editor', 'Can edit things', ['content:edit', 'content:view']
+        'editor', 'Can edit things', ['content:edit', 'content:read']
     )
 
     from fastapi_oauth_rbac.database.session import engine, AsyncSessionLocal
@@ -75,4 +75,4 @@ async def test_role_registration():
         assert len(role.permissions) == 2
         perm_names = {p.name for p in role.permissions}
         assert 'content:edit' in perm_names
-        assert 'content:view' in perm_names
+        assert 'content:read' in perm_names
