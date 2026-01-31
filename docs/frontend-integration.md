@@ -107,7 +107,45 @@ export const LoginForm = () => {
 
 ---
 
-## 2. Google OAuth Integration (SPA Mode)
+---
+
+## 2. Google Cloud Configuration
+
+Before implementing Google OAuth, you need to obtain credentials from the Google Cloud Console.
+
+### 1. Create Credentials
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/).
+2. Create a new project or select an existing one.
+3. Navigate to **APIs & Services > Credentials**.
+4. Click **Create Credentials > OAuth client ID**.
+5. Select **Web application** as the application type.
+
+### 2. Configure URIs
+The configuration depends on your integration method:
+
+| Setting | Backend Flow (Standard) | SPA Flow (React/Vue/etc) |
+| :--- | :--- | :--- |
+| **Authorized JavaScript Origins** | Not strictly required, but recommended (e.g., `http://localhost:8000`) | **REQUIRED**: Your Frontend URL (e.g., `http://localhost:3000`) |
+| **Authorized Redirect URIs** | Your Backend Callback URL (e.g., `http://localhost:8000/auth/google/callback`) | Your Frontend Callback URL (e.g., `http://localhost:3000/oauth/callback`) |
+
+> [!IMPORTANT]
+> For **SPA Mode**, you must add your frontend URL (e.g., `http://localhost:3000`) to **Authorized JavaScript Origins**. If you don't, Google will block the popup/redirect.
+
+### 3. Environment Variables
+Add the credentials to your backend `.env` file:
+
+```bash
+GOOGLE_OAUTH_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_OAUTH_CLIENT_SECRET=your-client-secret
+# Only for Backend Flow
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/auth/google/callback
+```
+
+For SPAs, you also need the `CLIENT_ID` in your frontend code.
+
+---
+
+## 3. Google OAuth Integration (SPA Mode)
 
 The library provides a dedicated endpoint for Single Page Applications (SPAs) at `POST /auth/google/exchange`. This allows you to handle the OAuth redirect on the client-side and simply exchange the authorization code for a session token.
 
