@@ -1,5 +1,7 @@
 # FastAPIOAuthRBAC
 
+[![PyPI version](https://badge.fury.io/py/fastapi-oauth-rbac.svg)](https://badge.fury.io/py/fastapi-oauth-rbac) [![Downloads](https://static.pepy.tech/badge/fastapi-oauth-rbac)](https://pepy.tech/project/fastapi-oauth-rbac) [![Downloads Month](https://static.pepy.tech/badge/fastapi-oauth-rbac/month)](https://pepy.tech/project/fastapi-oauth-rbac)
+
 A comprehensive FastAPI library for Authentication and NIST-style Role-Based Access Control (RBAC).
 
 ---
