@@ -1,6 +1,6 @@
 [project]
 name = "fastapi-oauth-rbac"
-version = "0.1.4"
+version = "0.1.5"
 description = "A comprehensive FastAPI library for Authentication and NIST-style Role-Based Access Control (RBAC) with SQLAlchemy support."
 readme = "README.md"
 authors = [

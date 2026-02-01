@@ -86,12 +86,14 @@ async def signup(
 
     # Audit Log (Self signup or system action)
     audit = AuditManager(db)
+
+    enabled = rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True
     await audit.log(
         actor_email=user.email,
         action='USER_SIGNUP',
         target=user.email,
         details=f'Tenant: {user.tenant_id}',
-        enabled=rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True,
+        enabled=enabled,
     )
 
     # 1. Trigger Hook

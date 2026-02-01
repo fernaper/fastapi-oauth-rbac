@@ -237,13 +237,14 @@ async def verify_user_action(
         request.cookies.get('access_token'),
         db,
     )
+    enabled = rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True
     await audit.log(
         actor_email=current_user.email if current_user else 'system',
         action='USER_VERIFY_TOGGLE',
         target=user.email,
         details=f'Verified: {user.is_verified}',
         ip_address=request.client.host if request.client else None,
-        enabled=rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True,
+        enabled=enabled,
     )
 
     query = f'?page={page}&pageSize={pageSize}'
@@ -288,13 +289,14 @@ async def toggle_user_active(
         request.cookies.get('access_token'),
         db,
     )
+    enabled = rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True
     await audit.log(
         actor_email=current_user.email if current_user else 'system',
         action='USER_TOGGLE_ACTIVE',
         target=user.email,
         details=f'Active: {user.is_active}',
         ip_address=request.client.host if request.client else None,
-        enabled=rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True,
+        enabled=enabled,
     )
 
     query = f'?page={page}&pageSize={pageSize}'
@@ -348,12 +350,13 @@ async def create_user_action(
         request.cookies.get('access_token'),
         db,
     )
+    enabled = rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True
     await audit.log(
         actor_email=current_user.email if current_user else 'system',
         action='USER_CREATED_DASHBOARD',
         target=new_user.email,
         ip_address=request.client.host if request.client else None,
-        enabled=rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True,
+        enabled=enabled,
     )
     return RedirectResponse(
         url=request.url_for('dashboard_index'),
@@ -405,13 +408,14 @@ async def update_user_roles(
         request.cookies.get('access_token'),
         db,
     )
+    enabled = rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True
     await audit.log(
         actor_email=current_user.email if current_user else 'system',
         action='USER_ROLES_UPDATE',
         target=user.email,
         details=f'New role IDs: {role_ids}',
         ip_address=request.client.host if request.client else None,
-        enabled=rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True,
+        enabled=enabled,
     )
 
     return RedirectResponse(

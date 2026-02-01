@@ -5,7 +5,11 @@ from typing import Type, Optional, AsyncGenerator, List, Set
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    create_async_engine,
+    async_sessionmaker,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -14,7 +18,11 @@ from .core.security import hash_password
 from .core.hooks import hooks
 from .core.email import BaseEmailExporter, ConsoleEmailExporter
 from .database.models import Base, User, Role, Permission
-from .database.session import AsyncSessionLocal, engine, get_db
+from .database.session import (
+    AsyncSessionLocal as DefaultAsyncSessionLocal,
+    engine as default_engine,
+    get_db,
+)
 
 
 class FastAPIOAuthRBAC:
@@ -32,6 +40,18 @@ class FastAPIOAuthRBAC:
         self.email_exporter = email_exporter or ConsoleEmailExporter()
         self.hooks = hooks
 
+        # Initialize Database Resources
+        self.db_engine = create_async_engine(
+            self.settings.DATABASE_URL, echo=False
+        )
+        self.db_sessionmaker = async_sessionmaker(
+            bind=self.db_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autocommit=False,
+            autoflush=False,
+        )
+
         # Default dependency override
         self.app.dependency_overrides[get_db] = get_db
 
@@ -43,9 +63,9 @@ class FastAPIOAuthRBAC:
             app: FastAPI,
         ) -> AsyncGenerator[None, None]:
             # 1. Init DB (if using SQLite or explicitly requested,
-            # though usually people use Alembic)
+            # Though usually people use Alembic)
             # For now keep it as a convenience, maybe add a flag for it later
-            async with engine.begin() as conn:
+            async with self.db_engine.begin() as conn:
                 if self.settings.AUDIT_ENABLED:
                     await conn.run_sync(Base.metadata.create_all)
                 else:
@@ -60,7 +80,7 @@ class FastAPIOAuthRBAC:
                     )
 
             # 2. Setup defaults (Mandatory)
-            async with AsyncSessionLocal() as session:
+            async with self.db_sessionmaker() as session:
                 await self.setup_defaults(session)
 
             # 3. Call original lifespan if it exists
@@ -281,7 +301,7 @@ class FastAPIOAuthRBAC:
 
     async def set_user_password(self, email: str, password: str):
         """Helper to update a user's password directly."""
-        async with AsyncSessionLocal() as session:
+        async with self.db_sessionmaker() as session:
             stmt = select(self.user_model).where(
                 self.user_model.email == email
             )

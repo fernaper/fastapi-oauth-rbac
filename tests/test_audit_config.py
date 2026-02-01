@@ -18,13 +18,14 @@ from sqlalchemy import select, func
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("enabled", [True, False])
+@pytest.mark.parametrize('enabled', [True, False])
 async def test_audit_configuration(enabled: bool):
     print(f'\n--- Testing Audit Enabled={enabled} ---')
     app = FastAPI()
     engine = create_async_engine('sqlite+aiosqlite:///:memory:')
 
     from fastapi_oauth_rbac import Settings
+
     settings = Settings(AUDIT_ENABLED=enabled)
     auth = FastAPIOAuthRBAC(app, settings=settings)
 
