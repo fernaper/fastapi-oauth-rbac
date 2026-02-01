@@ -18,11 +18,7 @@ from .core.security import hash_password
 from .core.hooks import hooks
 from .core.email import BaseEmailExporter, ConsoleEmailExporter
 from .database.models import Base, User, Role, Permission
-from .database.session import (
-    AsyncSessionLocal as DefaultAsyncSessionLocal,
-    engine as default_engine,
-    get_db,
-)
+from .database.session import get_db
 
 
 class FastAPIOAuthRBAC:

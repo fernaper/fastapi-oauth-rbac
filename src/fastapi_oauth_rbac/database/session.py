@@ -5,21 +5,6 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
 )
 
-from ..core.config import settings
-
-
-# Create async engine
-engine = create_async_engine(settings.DATABASE_URL, echo=False)
-
-# Create async session factory (default for backward compatibility)
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autocommit=False,
-    autoflush=False,
-)
-
 
 async def get_db(request: Request):
     """
@@ -27,9 +12,13 @@ async def get_db(request: Request):
     It prioritizes the sessionmaker configured in the FastAPIOAuthRBAC instance.
     """
     rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
-    sessionmaker = (
-        rbac_instance.db_sessionmaker if rbac_instance else AsyncSessionLocal
-    )
+    if not rbac_instance:
+        raise RuntimeError(
+            'FastAPIOAuthRBAC not initialized on app.state.oauth_rbac. '
+            'Ensure you called include_auth_router() or set the state manually.'
+        )
+
+    sessionmaker = rbac_instance.db_sessionmaker
 
     async with sessionmaker() as session:
         try:

@@ -19,20 +19,23 @@ async def test_dynamic_permission_discovery():
     async def custom_route():
         return {'ok': True}
 
-    # Initialize library
-    auth = FastAPIOAuthRBAC(app)  # We'll call setup_defaults manually
+    from fastapi_oauth_rbac import Settings
+
+    # Initialize library with in-memory database
+    settings = Settings(DATABASE_URL='sqlite+aiosqlite:///:memory:')
+    auth = FastAPIOAuthRBAC(
+        app, settings=settings
+    )  # We'll call setup_defaults manually
 
     # The permission "custom:action" should be discovered
     discovered = auth._discover_route_permissions()
     assert 'custom:action' in discovered
 
     # Now verify it gets created in the DB during setup
-    from fastapi_oauth_rbac.database.session import engine, AsyncSessionLocal
-
-    async with engine.begin() as conn:
+    async with auth.db_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    async with AsyncSessionLocal() as session:
+    async with auth.db_sessionmaker() as session:
         await auth.setup_defaults(session)
 
         # Check if it exists
@@ -46,20 +49,22 @@ async def test_dynamic_permission_discovery():
 @pytest.mark.asyncio
 async def test_role_registration():
     app = FastAPI()
-    auth = FastAPIOAuthRBAC(app)
+    from fastapi_oauth_rbac import Settings
+
+    settings = Settings(DATABASE_URL='sqlite+aiosqlite:///:memory:')
+    auth = FastAPIOAuthRBAC(app, settings=settings)
 
     # Register a custom role
     auth.add_role(
         'editor', 'Can edit things', ['content:edit', 'content:read']
     )
 
-    from fastapi_oauth_rbac.database.session import engine, AsyncSessionLocal
     from fastapi_oauth_rbac.database.models import Role
 
-    async with engine.begin() as conn:
+    async with auth.db_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    async with AsyncSessionLocal() as session:
+    async with auth.db_sessionmaker() as session:
         await auth.setup_defaults(session)
 
         # Check if role exists
