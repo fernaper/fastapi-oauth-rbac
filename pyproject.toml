@@ -1,12 +1,12 @@
 [project]
 name = "fastapi-oauth-rbac"
-version = "0.1.1"
+version = "0.1.2"
 description = "Add your description here"
 readme = "README.md"
 authors = [
     { name = "Fernando", email = "fernando@softpoint.es" }
 ]
-requires-python = ">=3.14"
+requires-python = ">=3.10"
 dependencies = [
     "alembic>=1.18.3",
     "argon2-cffi>=25.1.0",
