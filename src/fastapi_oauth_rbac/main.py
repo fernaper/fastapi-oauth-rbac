@@ -58,22 +58,39 @@ class FastAPIOAuthRBAC:
         async def lifespan_wrapper(
             app: FastAPI,
         ) -> AsyncGenerator[None, None]:
-            # 1. Init DB (if using SQLite or explicitly requested,
-            # Though usually people use Alembic)
-            # For now keep it as a convenience, maybe add a flag for it later
+            # 1. Init DB
             async with self.db_engine.begin() as conn:
-                if self.settings.AUDIT_ENABLED:
-                    await conn.run_sync(Base.metadata.create_all)
-                else:
-                    # Filter out audit_logs table
-                    tables = [
-                        table
-                        for name, table in Base.metadata.tables.items()
-                        if name != 'audit_logs'
-                    ]
+                # FIRST: Create the custom user model's tables if it has its own metadata
+                user_metadata = getattr(self.user_model, 'metadata', None)
+                if user_metadata:
+                    # If it's the same as Base.metadata, we'll handle it below with filtering
+                    if user_metadata is not Base.metadata:
+                        await conn.run_sync(user_metadata.create_all)
+                
+                # SECOND: Create library tables, carefully skipping 'users' if overridden
+                tables_to_create = []
+                for name, table in Base.metadata.tables.items():
+                    if name == 'audit_logs' and not self.settings.AUDIT_ENABLED:
+                        continue
+                    
+                    # If using a custom model, skip the library's default 'users' table definition
+                    # to let the custom one (which might have more columns) take precedence.
+                    if name == 'users' and self.user_model is not User:
+                        continue
+                        
+                    tables_to_create.append(table)
+                
+                if tables_to_create:
                     await conn.run_sync(
-                        Base.metadata.create_all, tables=tables
+                        Base.metadata.create_all, tables=tables_to_create
                     )
+                
+                # THIRD: If the custom model uses Base.metadata, we must ensure it's created 
+                # after the others to avoid FK issues, but with its specific table object.
+                if user_metadata is Base.metadata and self.user_model is not User:
+                    user_table = getattr(self.user_model, '__table__', None)
+                    if user_table is not None:
+                        await conn.run_sync(user_table.create, checkfirst=True)
 
             # 2. Setup defaults (Mandatory)
             async with self.db_sessionmaker() as session:
@@ -290,6 +307,7 @@ class FastAPIOAuthRBAC:
                 hashed_password=hash_password(admin_password),
                 is_verified=True,
                 roles=[admin_role] if admin_role else [],
+                **self.settings.ADMIN_EXTRA_DATA,
             )
             db.add(admin_user)
 

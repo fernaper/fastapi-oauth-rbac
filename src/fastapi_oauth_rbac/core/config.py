@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # Default Admin (for quick start)
     ADMIN_EMAIL: str = 'admin@example.com'
     ADMIN_PASSWORD: Optional[str] = None
+    ADMIN_EXTRA_DATA: dict = {}
 
     # Auth Flow Settings
     SIGNUP_ENABLED: bool = True

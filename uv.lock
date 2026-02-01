@@ -526,7 +526,7 @@ wheels = [
 
 [[package]]
 name = "fastapi-oauth-rbac"
-version = "0.1.6"
+version = "0.1.16"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -554,6 +554,7 @@ sqlite = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "asyncpg" },
     { name = "pytest" },
     { name = "pytest-cov" },
 ]
@@ -580,6 +581,7 @@ provides-extras = ["postgres", "sqlite"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
 ]

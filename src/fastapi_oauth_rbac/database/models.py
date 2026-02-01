@@ -10,8 +10,16 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    Uuid,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+    declared_attr,
+)
+from sqlalchemy.schema import ForeignKeyConstraint
 from datetime import datetime, timezone
 
 
@@ -23,15 +31,29 @@ class Base(DeclarativeBase):
 role_permissions = Table(
     'role_permissions',
     Base.metadata,
-    Column('role_id', ForeignKey('roles.id'), primary_key=True),
-    Column('permission_id', ForeignKey('permissions.id'), primary_key=True),
+    Column('role_id', Integer, primary_key=True),
+    Column('permission_id', Integer, primary_key=True),
+    ForeignKeyConstraint(
+        ['role_id'], ['roles.id'], name='fk_role_permissions_role_id'
+    ),
+    ForeignKeyConstraint(
+        ['permission_id'],
+        ['permissions.id'],
+        name='fk_role_permissions_permission_id',
+    ),
 )
 
 user_roles = Table(
     'user_roles',
     Base.metadata,
-    Column('user_id', ForeignKey('users.id'), primary_key=True),
-    Column('role_id', ForeignKey('roles.id'), primary_key=True),
+    Column('user_id', Uuid, primary_key=True),
+    Column('role_id', Integer, primary_key=True),
+    ForeignKeyConstraint(
+        ['user_id'], ['users.id'], name='fk_user_roles_user_id'
+    ),
+    ForeignKeyConstraint(
+        ['role_id'], ['roles.id'], name='fk_user_roles_role_id'
+    ),
 )
 
 
@@ -67,20 +89,26 @@ class Role(Base):
     )
 
     permissions: Mapped[List[Permission]] = relationship(
-        secondary=role_permissions
+        Permission,
+        secondary=role_permissions,
+        primaryjoin=lambda: Role.id == role_permissions.c.role_id,
+        secondaryjoin=lambda: Permission.id == role_permissions.c.permission_id,
+        overlaps="permissions",
     )
 
 
 class UserBaseMixin:
     """Base mixin for User model to allow extensibility."""
 
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, primary_key=True, default=uuid.uuid4
+    )
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[Optional[str]] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(default=True)
     is_verified: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     # OAuth fields
@@ -91,11 +119,19 @@ class UserBaseMixin:
     is_revoked: Mapped[bool] = mapped_column(default=False)
     tenant_id: Mapped[Optional[str]] = mapped_column(String(100), index=True)
 
+    @declared_attr
+    def roles(cls) -> Mapped[List[Role]]:
+        return relationship(
+            Role,
+            secondary=user_roles,
+            primaryjoin=lambda: cls.id == user_roles.c.user_id,
+            secondaryjoin=lambda: Role.id == user_roles.c.role_id,
+            overlaps="roles",
+        )
+
 
 class User(Base, UserBaseMixin):
     __tablename__ = 'users'
-
-    roles: Mapped[List[Role]] = relationship(secondary=user_roles)
 
 
 class AuditLog(Base):
@@ -103,7 +139,7 @@ class AuditLog(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     timestamp: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     actor_email: Mapped[str] = mapped_column(String(255))
     action: Mapped[str] = mapped_column(String(100))
