@@ -28,21 +28,25 @@ uv add fastapi-oauth-rbac --extra sqlite
 
 ## 🛠️ Basic Integration
 
-Getting started is as simple as initializing the `FastAPIOAuthRBAC` class. By default, it uses environment variables for configuration and handles database initialization and default role creation automatically.
+Getting started is as simple as initializing the `FastAPIOAuthRBAC` class. By default, it uses environment variables (prefixed with `FORBAC_`) for configuration. You can also pass a custom `Settings` object for more control.
 
 ```python
 from fastapi import FastAPI
-from fastapi_oauth_rbac import FastAPIOAuthRBAC
+from fastapi_oauth_rbac import FastAPIOAuthRBAC, Settings
 
 app = FastAPI()
 
-# Initialize the library
+# Initialize with default settings (loads from .env)
 auth = FastAPIOAuthRBAC(app)
+
+# OR pass explicit settings
+# custom_settings = Settings(DATABASE_URL="...", ...)
+# auth = FastAPIOAuthRBAC(app, settings=custom_settings)
 
 # Add the essential authentication routes (login, logout, signup, /me)
 auth.include_auth_router()
 
-# Add the Admin Dashboard (Optional)
+# Add the Admin Dashboard (Explicitly required)
 auth.include_dashboard()
 ```
 

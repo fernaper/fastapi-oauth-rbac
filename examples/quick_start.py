@@ -16,7 +16,9 @@ app = FastAPI(title='Async Quick Start')
 auth = FastAPIOAuthRBAC(app, enable_dashboard=True, require_verified=True)
 
 # 2. Register Custom Roles (Optional)
-auth.add_role('editor', 'Can manage content', ['content:update', 'content:read'])
+auth.add_role(
+    'editor', 'Can manage content', ['content:update', 'content:read']
+)
 auth.add_role('content_manager', 'Can manage all content', ['content:*'])
 
 # 3. Include the authentication router

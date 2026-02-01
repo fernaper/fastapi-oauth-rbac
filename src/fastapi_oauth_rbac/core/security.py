@@ -3,7 +3,7 @@ from typing import Optional
 from jose import jwt
 from pwdlib import PasswordHash
 
-from .config import settings
+from .config import settings as default_settings, Settings
 
 password_hash = PasswordHash.recommended()
 
@@ -17,18 +17,21 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(
-    data: dict, expires_delta: Optional[timedelta] = None
+    data: dict,
+    expires_delta: Optional[timedelta] = None,
+    settings: Optional[Settings] = None,
 ) -> str:
+    s = settings or default_settings
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(
-            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+            minutes=s.ACCESS_TOKEN_EXPIRE_MINUTES
         )
     to_encode.update({'exp': expire})
     encoded_jwt = jwt.encode(
-        to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM
+        to_encode, s.JWT_SECRET_KEY, algorithm=s.JWT_ALGORITHM
     )
     return encoded_jwt
 
@@ -36,24 +39,25 @@ def create_access_token(
 def create_refresh_token(
     data: dict,
     expires_delta: Optional[timedelta] = None,
+    settings: Optional[Settings] = None,
 ) -> str:
+    s = settings or default_settings
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(
-            days=settings.REFRESH_TOKEN_EXPIRE_DAYS
+            days=s.REFRESH_TOKEN_EXPIRE_DAYS
         )
     to_encode.update({'exp': expire, 'type': 'refresh'})
     encoded_jwt = jwt.encode(
         to_encode,
-        settings.JWT_SECRET_KEY,
-        algorithm=settings.JWT_ALGORITHM,
+        s.JWT_SECRET_KEY,
+        algorithm=s.JWT_ALGORITHM,
     )
     return encoded_jwt
 
 
-def decode_token(token: str) -> dict:
-    return jwt.decode(
-        token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM]
-    )
+def decode_token(token: str, settings: Optional[Settings] = None) -> dict:
+    s = settings or default_settings
+    return jwt.decode(token, s.JWT_SECRET_KEY, algorithms=[s.JWT_ALGORITHM])

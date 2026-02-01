@@ -2,7 +2,7 @@ import httpx
 
 from typing import Dict, Any
 
-from ..core.config import settings
+from ..core.config import settings as default_settings, Settings
 
 
 class GoogleOAuth:
@@ -11,12 +11,9 @@ class GoogleOAuth:
 
     @classmethod
     async def get_user_data(
-        cls, code: str, redirect_uri: str
+        cls, code: str, redirect_uri: str, client_id: str, client_secret: str
     ) -> Dict[str, Any]:
-        if (
-            not settings.GOOGLE_OAUTH_CLIENT_ID
-            or not settings.GOOGLE_OAUTH_CLIENT_SECRET
-        ):
+        if not client_id or not client_secret:
             raise ValueError('Google OAuth credentials not configured')
 
         async with httpx.AsyncClient() as client:
@@ -25,8 +22,8 @@ class GoogleOAuth:
                 cls.TOKEN_URL,
                 data={
                     'code': code,
-                    'client_id': settings.GOOGLE_OAUTH_CLIENT_ID,
-                    'client_secret': settings.GOOGLE_OAUTH_CLIENT_SECRET,
+                    'client_id': client_id,
+                    'client_secret': client_secret,
                     'redirect_uri': redirect_uri,
                     'grant_type': 'authorization_code',
                 },

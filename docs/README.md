@@ -27,8 +27,10 @@ from fastapi import FastAPI
 from fastapi_oauth_rbac import FastAPIOAuthRBAC
 
 app = FastAPI()
+# Initialize (environment variables prefixed with FORBAC_ or explicit settings)
 auth = FastAPIOAuthRBAC(app)
 auth.include_auth_router()
+auth.include_dashboard()
 ```
 
 ---

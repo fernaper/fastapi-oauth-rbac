@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from .core.config import settings
+from .core.config import settings as default_settings, Settings
 from .core.security import hash_password
 from .core.hooks import hooks
 from .core.email import BaseEmailExporter, ConsoleEmailExporter
@@ -22,21 +22,15 @@ class FastAPIOAuthRBAC:
         self,
         app: FastAPI,
         user_model: Optional[Type] = None,
-        require_verified: bool = settings.REQUIRE_VERIFIED_LOGIN,
-        enable_dashboard: bool = settings.DASHBOARD_ENABLED,
-        dashboard_path: str = settings.DASHBOARD_PATH,
+        settings: Optional[Settings] = None,
         email_exporter: Optional[BaseEmailExporter] = None,
-        enable_audit: bool = True,
     ):
         self.app = app
+        self.settings = settings or default_settings
         self.user_model = user_model or User
         self.registered_roles = {}  # name -> {"description": str, "permissions": List[str]}
-        self.require_verified = require_verified
-        self.enable_dashboard = enable_dashboard
-        self.dashboard_path = dashboard_path
         self.email_exporter = email_exporter or ConsoleEmailExporter()
         self.hooks = hooks
-        self.enable_audit = enable_audit
 
         # Default dependency override
         self.app.dependency_overrides[get_db] = get_db
@@ -52,7 +46,7 @@ class FastAPIOAuthRBAC:
             # though usually people use Alembic)
             # For now keep it as a convenience, maybe add a flag for it later
             async with engine.begin() as conn:
-                if self.enable_audit:
+                if self.settings.AUDIT_ENABLED:
                     await conn.run_sync(Base.metadata.create_all)
                 else:
                     # Filter out audit_logs table
@@ -61,7 +55,9 @@ class FastAPIOAuthRBAC:
                         for name, table in Base.metadata.tables.items()
                         if name != 'audit_logs'
                     ]
-                    await conn.run_sync(Base.metadata.create_all, tables=tables)
+                    await conn.run_sync(
+                        Base.metadata.create_all, tables=tables
+                    )
 
             # 2. Setup defaults (Mandatory)
             async with AsyncSessionLocal() as session:
@@ -76,10 +72,6 @@ class FastAPIOAuthRBAC:
 
         app.router.lifespan_context = lifespan_wrapper
 
-        # Register dashboard if enabled
-        if self.enable_dashboard:
-            self.include_dashboard()
-
     def include_auth_router(self, prefix: str = '/auth'):
         from .auth.router import auth_router
 
@@ -87,11 +79,12 @@ class FastAPIOAuthRBAC:
         self.app.state.oauth_rbac = self
         self.app.include_router(auth_router, prefix=prefix)
 
-    def include_dashboard(self):
+    def include_dashboard(self, path: Optional[str] = None):
         """Registers the internal Jinja2 dashboard."""
         from .dashboard.router import dashboard_router
 
-        self.app.include_router(dashboard_router, prefix=self.dashboard_path)
+        dashboard_path = path or self.settings.DASHBOARD_PATH
+        self.app.include_router(dashboard_router, prefix=dashboard_path)
 
     def add_role(self, name: str, description: str, permissions: List[str]):
         """Registers a role to be created during setup."""
@@ -249,15 +242,14 @@ class FastAPIOAuthRBAC:
         await db.flush()
 
         # 6. Initial Admin User
-        admin_email = settings.ADMIN_EMAIL
+        admin_email = self.settings.ADMIN_EMAIL
         stmt = select(self.user_model).where(
             self.user_model.email == admin_email
         )
         result = await db.execute(stmt)
         if not result.scalar_one_or_none():
             admin_role = existing_roles.get('admin')
-
-            admin_password = settings.ADMIN_PASSWORD
+            admin_password = self.settings.ADMIN_PASSWORD
             if not admin_password:
                 # Generate a secure random password
                 alphabet = string.ascii_letters + string.digits

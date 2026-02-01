@@ -4,6 +4,13 @@
 
 ## 🚀 Accessing the Dashboard
 
+To enable the dashboard, you must explicitly call `.include_dashboard()` on your `FastAPIOAuthRBAC` instance.
+
+```python
+auth = FastAPIOAuthRBAC(app)
+auth.include_dashboard(path="/custom/admin") # path is optional
+```
+
 By default, the dashboard is available at:
 `http://your-app-url/auth/dashboard/`
 

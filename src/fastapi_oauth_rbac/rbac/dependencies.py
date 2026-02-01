@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from ..core.security import decode_token
-from ..core.config import settings
+from ..core.config import settings as default_settings, Settings
 from ..database.models import User, Role, Permission
 from ..database.session import get_db
 from .manager import RBACManager
@@ -43,17 +43,22 @@ async def get_current_user_optional(
     if not token:
         return None
 
+    # Get the correct user model from app state
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    user_model = User
+    s = default_settings
+
+    if rbac_instance:
+        user_model = rbac_instance.user_model
+        s = rbac_instance.settings
+
     try:
-        payload = decode_token(token)
+        payload = decode_token(token, settings=s)
         email: str = payload.get('sub')
         if email is None:
             return None
     except Exception:
         return None
-
-    # Get the correct user model from app state
-    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
-    user_model = rbac_instance.user_model if rbac_instance else User
 
     # Async query with eager loading of roles and permissions
     stmt = (
@@ -68,7 +73,7 @@ async def get_current_user_optional(
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
-    if user and settings.AUTH_REVOCATION_ENABLED and user.is_revoked:
+    if user and s.AUTH_REVOCATION_ENABLED and user.is_revoked:
         return None
 
     return user

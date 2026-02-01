@@ -89,6 +89,7 @@ async def audit_dashboard(
         },
     )
 
+
 # Set up templates directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(current_dir, 'templates'))
@@ -242,7 +243,7 @@ async def verify_user_action(
         target=user.email,
         details=f'Verified: {user.is_verified}',
         ip_address=request.client.host if request.client else None,
-        enabled=rbac_instance.enable_audit if rbac_instance else True,
+        enabled=rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True,
     )
 
     query = f'?page={page}&pageSize={pageSize}'
@@ -293,7 +294,7 @@ async def toggle_user_active(
         target=user.email,
         details=f'Active: {user.is_active}',
         ip_address=request.client.host if request.client else None,
-        enabled=rbac_instance.enable_audit if rbac_instance else True,
+        enabled=rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True,
     )
 
     query = f'?page={page}&pageSize={pageSize}'
@@ -352,7 +353,7 @@ async def create_user_action(
         action='USER_CREATED_DASHBOARD',
         target=new_user.email,
         ip_address=request.client.host if request.client else None,
-        enabled=rbac_instance.enable_audit if rbac_instance else True,
+        enabled=rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True,
     )
     return RedirectResponse(
         url=request.url_for('dashboard_index'),
@@ -410,7 +411,7 @@ async def update_user_roles(
         target=user.email,
         details=f'New role IDs: {role_ids}',
         ip_address=request.client.host if request.client else None,
-        enabled=rbac_instance.enable_audit if rbac_instance else True,
+        enabled=rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True,
     )
 
     return RedirectResponse(

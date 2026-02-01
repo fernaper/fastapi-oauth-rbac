@@ -36,7 +36,11 @@ from fastapi import FastAPI
 from fastapi_oauth_rbac import FastAPIOAuthRBAC
 
 app = FastAPI()
+
+# Initialize with default settings or your own Settings object
 auth = FastAPIOAuthRBAC(app)
+
+# Explicitly include the routes you want
 auth.include_auth_router()
 auth.include_dashboard()
 ```

@@ -17,7 +17,7 @@ from sqlalchemy.orm import selectinload
 from typing import Optional
 
 from ..auth.oauth import GoogleOAuth
-from ..core.config import settings
+from ..core.config import settings as default_settings
 from ..core.security import (
     verify_password,
     hash_password,
@@ -26,7 +26,11 @@ from ..core.security import (
     decode_token,
 )
 from ..database.models import User, Role
-from ..rbac.dependencies import get_db, get_current_user, get_current_user_optional
+from ..rbac.dependencies import (
+    get_db,
+    get_current_user,
+    get_current_user_optional,
+)
 from ..rbac.manager import RBACManager
 from ..core.audit import AuditManager
 
@@ -53,10 +57,12 @@ class GoogleAuthRequest(BaseModel):
 async def signup(
     request: Request, data: SignupRequest, db: AsyncSession = Depends(get_db)
 ):
-    if not settings.SIGNUP_ENABLED:
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    s = rbac_instance.settings if rbac_instance else default_settings
+
+    if not s.SIGNUP_ENABLED:
         raise HTTPException(status_code=400, detail='Signup is disabled')
 
-    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
     user_model = rbac_instance.user_model if rbac_instance else User
 
     stmt = select(user_model).where(user_model.email == data.email)
@@ -85,7 +91,7 @@ async def signup(
         action='USER_SIGNUP',
         target=user.email,
         details=f'Tenant: {user.tenant_id}',
-        enabled=rbac_instance.enable_audit if rbac_instance else True,
+        enabled=rbac_instance.settings.AUDIT_ENABLED if rbac_instance else True,
     )
 
     # 1. Trigger Hook
@@ -93,9 +99,9 @@ async def signup(
         await rbac_instance.hooks.trigger('post_signup', user)
 
     # 2. Handle Verification Email
-    if settings.VERIFY_EMAIL_ENABLED and rbac_instance:
+    if s.VERIFY_EMAIL_ENABLED and rbac_instance:
         token = create_access_token(
-            data={'sub': user.email, 'type': 'verify_email'}
+            data={'sub': user.email, 'type': 'verify_email'}, settings=s
         )
         await rbac_instance.email_exporter.send_verification_email(user, token)
 
@@ -110,6 +116,7 @@ async def login_for_access_token(
     db: AsyncSession = Depends(get_db),
 ):
     rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    s = rbac_instance.settings if rbac_instance else default_settings
     user_model = rbac_instance.user_model if rbac_instance else User
 
     stmt = (
@@ -136,11 +143,9 @@ async def login_for_access_token(
         await db.commit()
         await db.refresh(user, ['roles'])
 
-    # Get RBAC settings from app state
-    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
     if (
         rbac_instance
-        and rbac_instance.require_verified
+        and rbac_instance.settings.REQUIRE_VERIFIED_LOGIN
         and not user.is_verified
     ):
         raise HTTPException(
@@ -154,23 +159,23 @@ async def login_for_access_token(
     permissions = await rbac.get_user_permissions(user)
 
     access_token = create_access_token(
-        data={'sub': user.email, 'scopes': list(permissions)}
+        data={'sub': user.email, 'scopes': list(permissions)}, settings=s
     )
-    refresh_token = create_refresh_token(data={'sub': user.email})
+    refresh_token = create_refresh_token(data={'sub': user.email}, settings=s)
 
     # Set cookie for dashboard access
     response.set_cookie(
         key='access_token',
         value=access_token,
         httponly=False,  # Allow JS to clear it on logout for now
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=s.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path='/',
     )
     response.set_cookie(
         key='refresh_token',
         value=refresh_token,
         httponly=True,  # Refresh token should be more secure
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        max_age=s.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         path='/',
     )
 
@@ -184,7 +189,7 @@ async def login_for_access_token(
             action='USER_LOGIN',
             target=user.email,
             ip_address=request.client.host if request.client else None,
-            enabled=rbac_instance.enable_audit,
+            enabled=rbac_instance.settings.AUDIT_ENABLED,
         )
 
     return {
@@ -232,8 +237,12 @@ async def refresh_token(
             detail='Refresh token missing',
         )
 
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    s = rbac_instance.settings if rbac_instance else default_settings
+    user_model = rbac_instance.user_model if rbac_instance else User
+
     try:
-        payload = decode_token(token)
+        payload = decode_token(token, settings=s)
         if payload.get('type') != 'refresh':
             raise ValueError('Invalid token type')
         email = payload.get('sub')
@@ -243,9 +252,6 @@ async def refresh_token(
             detail='Invalid refresh token',
         )
 
-    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
-    user_model = rbac_instance.user_model if rbac_instance else User
-
     stmt = (
         select(user_model)
         .where(user_model.email == email)
@@ -254,7 +260,7 @@ async def refresh_token(
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
-    if not user or (settings.AUTH_REVOCATION_ENABLED and user.is_revoked):
+    if not user or (s.AUTH_REVOCATION_ENABLED and user.is_revoked):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail='User not found or session revoked',
@@ -265,23 +271,25 @@ async def refresh_token(
     permissions = await rbac.get_user_permissions(user)
 
     new_access_token = create_access_token(
-        data={'sub': user.email, 'scopes': list(permissions)}
+        data={'sub': user.email, 'scopes': list(permissions)}, settings=s
     )
-    new_refresh_token = create_refresh_token(data={'sub': user.email})
+    new_refresh_token = create_refresh_token(
+        data={'sub': user.email}, settings=s
+    )
 
     # Update cookies
     response.set_cookie(
         key='access_token',
         value=new_access_token,
         httponly=False,
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=s.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path='/',
     )
     response.set_cookie(
         key='refresh_token',
         value=new_refresh_token,
         httponly=True,
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        max_age=s.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         path='/',
     )
 
@@ -312,11 +320,13 @@ async def read_users_me(
 async def verify_email(
     request: Request, token: str, db: AsyncSession = Depends(get_db)
 ):
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    s = rbac_instance.settings if rbac_instance else default_settings
+
     try:
-        payload = decode_token(token)
+        payload = decode_token(token, settings=s)
         email = payload.get('sub')
 
-        rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
         user_model = rbac_instance.user_model if rbac_instance else User
 
         stmt = select(user_model).where(user_model.email == email)
@@ -342,6 +352,7 @@ async def forgot_password(
     request: Request, email: EmailStr, db: AsyncSession = Depends(get_db)
 ):
     rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    s = rbac_instance.settings if rbac_instance else default_settings
     user_model = rbac_instance.user_model if rbac_instance else User
 
     stmt = select(user_model).where(user_model.email == email)
@@ -351,7 +362,9 @@ async def forgot_password(
             'message': 'If the email is registered, you will receive a reset link'
         }
 
-    token = create_access_token(data={'sub': email, 'type': 'reset_password'})
+    token = create_access_token(
+        data={'sub': email, 'type': 'reset_password'}, settings=s
+    )
 
     if rbac_instance:
         # Fetch user again to be sure (already done by exist check above but we need to pass it to exporter)
@@ -372,14 +385,16 @@ async def reset_password(
     data: ResetPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    s = rbac_instance.settings if rbac_instance else default_settings
+
     try:
-        payload = decode_token(data.token)
+        payload = decode_token(data.token, settings=s)
         if payload.get('type') != 'reset_password':
             raise ValueError('Invalid token type')
 
         email = payload.get('sub')
 
-        rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
         user_model = rbac_instance.user_model if rbac_instance else User
 
         stmt = select(user_model).where(user_model.email == email)
@@ -407,10 +422,17 @@ async def _process_google_login(
     Shared logic for processing Google Login (Code Exchange -> User Provisioning -> Token Issuance).
     Returns a Response object with tokens and cookies set.
     """
-    user_data = await GoogleOAuth.get_user_data(code, redirect_uri)
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    s = rbac_instance.settings if rbac_instance else default_settings
+
+    user_data = await GoogleOAuth.get_user_data(
+        code,
+        redirect_uri,
+        client_id=s.GOOGLE_OAUTH_CLIENT_ID,
+        client_secret=s.GOOGLE_OAUTH_CLIENT_SECRET,
+    )
     email = user_data.get('email')
 
-    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
     user_model = rbac_instance.user_model if rbac_instance else User
 
     stmt = (
@@ -440,7 +462,7 @@ async def _process_google_login(
     # Verification check for OAuth too
     if (
         rbac_instance
-        and rbac_instance.require_verified
+        and rbac_instance.settings.REQUIRE_VERIFIED_LOGIN
         and not user.is_verified
     ):
         raise HTTPException(
@@ -451,26 +473,28 @@ async def _process_google_login(
     rbac = RBACManager(db)
     permissions = await rbac.get_user_permissions(user)
     access_token = create_access_token(
-        data={'sub': user.email, 'scopes': list(permissions)}
+        data={'sub': user.email, 'scopes': list(permissions)}, settings=s
     )
 
     # Set cookie for dashboard access
     response = Response(
-        content=json.dumps({
-            'access_token': access_token,
-            'token_type': 'bearer',
-            'user': {
-                'email': user.email,
-                'roles': [r.name for r in user.roles],
+        content=json.dumps(
+            {
+                'access_token': access_token,
+                'token_type': 'bearer',
+                'user': {
+                    'email': user.email,
+                    'roles': [r.name for r in user.roles],
+                },
             }
-        }),
+        ),
         media_type='application/json',
     )
     response.set_cookie(
         key='access_token',
         value=access_token,
         httponly=False,
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=s.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path='/',
     )
 
@@ -481,7 +505,7 @@ async def _process_google_login(
             actor_email=user.email,
             action='USER_LOGIN_GOOGLE',
             target=user.email,
-            enabled=rbac_instance.enable_audit,
+            enabled=rbac_instance.settings.AUDIT_ENABLED,
         )
 
     return response
@@ -491,8 +515,11 @@ async def _process_google_login(
 async def google_callback(
     request: Request, code: str, db: AsyncSession = Depends(get_db)
 ):
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    s = rbac_instance.settings if rbac_instance else default_settings
+
     try:
-        redirect_uri = settings.GOOGLE_OAUTH_REDIRECT_URI or str(
+        redirect_uri = s.GOOGLE_OAUTH_REDIRECT_URI or str(
             request.url_for('google_callback')
         )
         return await _process_google_login(request, code, redirect_uri, db)
@@ -506,14 +533,19 @@ async def google_exchange(
     data: GoogleAuthRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    rbac_instance = getattr(request.app.state, 'oauth_rbac', None)
+    s = rbac_instance.settings if rbac_instance else default_settings
+
     try:
         # For SPA, usually the redirect_uri is the origin or configured one
-        redirect_uri = data.redirect_uri or settings.GOOGLE_OAUTH_REDIRECT_URI
+        redirect_uri = data.redirect_uri or s.GOOGLE_OAUTH_REDIRECT_URI
         if not redirect_uri:
             raise HTTPException(
                 status_code=400, detail='Redirect URI is required'
             )
 
-        return await _process_google_login(request, data.code, redirect_uri, db)
+        return await _process_google_login(
+            request, data.code, redirect_uri, db
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

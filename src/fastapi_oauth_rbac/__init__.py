@@ -1,5 +1,6 @@
 from .core.email import BaseEmailExporter
 from .core.audit import AuditManager
+from .core.config import Settings, SettingsConfigDict
 from .database.models import (
     User,
     Role,
@@ -23,4 +24,6 @@ __all__ = [
     'requires_permission',
     'BaseEmailExporter',
     'AuditManager',
+    'Settings',
+    'SettingsConfigDict',
 ]

@@ -5,6 +5,25 @@
 > [!IMPORTANT]
 > All environment variables must be prefixed with `FORBAC_` (e.g., `FORBAC_DATABASE_URL`, `FORBAC_ADMIN_EMAIL`).
 
+## 🛠️ Settings Injection
+
+While environment variables are the easiest way to configure the library, you can also inject a `Settings` object during initialization. This is useful for dynamic configurations or testing.
+
+```python
+from fastapi_oauth_rbac import FastAPIOAuthRBAC, Settings
+
+# Load settings from environment (default behavior)
+auth = FastAPIOAuthRBAC(app)
+
+# OR provide explicit values
+custom_settings = Settings(
+    DATABASE_URL="postgresql+asyncpg://user:pass@localhost/db",
+    JWT_SECRET_KEY="my-super-secret-key",
+    SIGNUP_ENABLED=False
+)
+auth = FastAPIOAuthRBAC(app, settings=custom_settings)
+```
+
 ## 🔑 Core Configuration
 
 | Variable | Description | Default |
@@ -39,6 +58,7 @@ Integrate third-party login providers easily.
 | `VERIFY_EMAIL_ENABLED` | Whether to send verification emails (Implementation pending). | `False` |
 | `REQUIRE_VERIFIED_LOGIN` | Enforce email verification for all logins. | `False` |
 | `AUTH_REVOCATION_ENABLED` | Enable user-level token revocation (Logout Global). | `False` |
+| `AUDIT_ENABLED` | Toggle automatic audit logging for system actions. | `True` |
 
 ## ⚡ Dashboard Settings
 

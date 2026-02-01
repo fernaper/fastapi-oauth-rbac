@@ -11,16 +11,14 @@ The main entry point for the library.
 FastAPIOAuthRBAC(
     app: FastAPI,
     user_model: Optional[Type] = None,
-    require_verified: bool = settings.REQUIRE_VERIFIED_LOGIN,
-    enable_dashboard: bool = settings.DASHBOARD_ENABLED,
-    dashboard_path: str = settings.DASHBOARD_PATH,
+    settings: Optional[Settings] = None,
+    email_exporter: Optional[BaseEmailExporter] = None,
 )
 ```
 - `app`: The FastAPI instance to attach to.
 - `user_model`: (Optional) Your custom SQLAlchemy user model. Defaults to internal `User`.
-- `require_verified`: Whether to enforce email verification for logins.
-- `enable_dashboard`: Toggle the visual admin dashboard.
-- `dashboard_path`: The base path for the dashboard (defaults to `/auth/dashboard`).
+- `settings`: (Optional) A `Settings` object for configuration. If not provided, it loads from environment variables with `FORBAC_` prefix.
+- `email_exporter`: (Optional) Custom email service implementation.
 
 ### Methods
 - `include_auth_router()`: Mounts the authentication endpoints (`/login`, `/signup`, `/logout`, `/me`).

@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     DASHBOARD_ENABLED: bool = True
     DASHBOARD_PATH: str = '/auth/dashboard'
 
+    # Audit Settings
+    AUDIT_ENABLED: bool = True
+
     model_config = SettingsConfigDict(
         env_file='.env',
         extra='ignore',
